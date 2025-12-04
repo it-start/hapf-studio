@@ -9,21 +9,27 @@ import {
   Box,
   FileJson,
   ChevronDown,
-  GitGraph
+  GitGraph,
+  Github,
+  X,
+  Lock,
+  Globe
 } from 'lucide-react';
 import { 
   LogLevel, 
   LogEntry, 
   PipelineStatus, 
-  Artifacts 
+  Artifacts,
+  GithubConfig
 } from './types';
 import { PIPELINE_EXAMPLES } from './constants';
 import * as geminiService from './services/geminiService';
+import * as githubService from './services/githubService';
 import Console from './components/Console';
 import PipelineVisualizer from './components/PipelineVisualizer';
 import CodeBlock from './components/CodeBlock';
 import HapfDiagram from './components/HapfDiagram';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, XAxis, YAxis, Tooltip, ResponsiveContainer, Bar } from 'recharts';
 
 // Helper for generating IDs
 const uid = () => Math.random().toString(36).substr(2, 9);
@@ -43,6 +49,11 @@ function App() {
   const [selectedExampleKey, setSelectedExampleKey] = useState<string>("reverse-engineer");
   const [editorCode, setEditorCode] = useState(PIPELINE_EXAMPLES["reverse-engineer"].code);
   const [inputText, setInputText] = useState(PIPELINE_EXAMPLES["reverse-engineer"].input);
+
+  // GitHub State
+  const [showGithubModal, setShowGithubModal] = useState(false);
+  const [useGithub, setUseGithub] = useState(false);
+  const [githubConfig, setGithubConfig] = useState<GithubConfig>({ repoUrl: '', token: '' });
   
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -86,15 +97,33 @@ function App() {
     
     addLog("Initializing HAPF Runtime v1.0...", LogLevel.SYSTEM);
     addLog(`Loading module "hapf-web-studio-self-reflection"`, LogLevel.SYSTEM);
-    addLog(`Environment: gemini-2.5-flash | Context: Simulated Self-Reflection`, LogLevel.SYSTEM);
+    addLog(`Environment: gemini-2.5-flash | Context: ${useGithub ? 'Real GitHub Repo' : 'Simulated Synthetic Input'}`, LogLevel.SYSTEM);
 
     try {
-      // --- STEP 1: INGEST VIRTUAL FS ---
+      let files: any[] = [];
+
+      // --- STEP 1: INGEST (Virtual or Real) ---
       addLog("Starting Module: ingest.virtual_fs", LogLevel.INFO, "INGEST");
-      
-      const files = await geminiService.runIngestFiles(inputText);
+
+      if (useGithub && githubConfig.repoUrl) {
+         try {
+             addLog(`Fetching metadata from ${githubConfig.repoUrl}...`, LogLevel.INFO, "GITHUB_API");
+             files = await githubService.fetchGithubRepo(
+                 githubConfig.repoUrl, 
+                 githubConfig.token, 
+                 (msg) => addLog(msg, LogLevel.INFO, "GITHUB_API")
+             );
+             addLog(`Successfully indexed ${files.length} relevant files from repository.`, LogLevel.SUCCESS, "INGEST");
+         } catch (e: any) {
+             throw new Error(`GitHub Error: ${e.message}`);
+         }
+      } else {
+         // Synthetic Ingest
+         files = await geminiService.runIngestFiles(inputText);
+         addLog(`Ingested ${files.length} virtual files from config.`, LogLevel.SUCCESS, "INGEST");
+      }
+
       setArtifacts(prev => ({ ...prev, files }));
-      addLog(`Ingested ${files.length} virtual files from config.`, LogLevel.SUCCESS, "INGEST");
       
       // --- STEP 2: ANALYZE ARCHITECTURE ---
       setPipelineStatus(PipelineStatus.ANALYZING);
@@ -122,7 +151,7 @@ function App() {
       addLog(`Pipeline crashed: ${error.message || "Unknown error"}`, LogLevel.ERROR, "SYSTEM");
       setPipelineStatus(PipelineStatus.FAILED);
     }
-  }, [inputText, pipelineStatus, addLog, activeTab]);
+  }, [inputText, pipelineStatus, addLog, activeTab, useGithub, githubConfig]);
 
   const handleReset = () => {
     setPipelineStatus(PipelineStatus.IDLE);
@@ -187,7 +216,7 @@ function App() {
 
         {artifacts.files && (
           <div className="bg-hapf-panel border border-hapf-accent/30 rounded p-4">
-             <h3 className="text-hapf-accent font-bold mb-2 flex items-center gap-2"><Box size={16}/> Ingested Virtual Files</h3>
+             <h3 className="text-hapf-accent font-bold mb-2 flex items-center gap-2"><Box size={16}/> Ingested Files</h3>
              <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
                     <thead>
@@ -216,7 +245,7 @@ function App() {
 
   const renderMetrics = () => {
      const data = [
-        { name: 'Ingest', latency: 450, cost: 0.002 },
+        { name: 'Ingest', latency: useGithub ? 1200 : 450, cost: useGithub ? 0.0 : 0.002 },
         { name: 'Analyze', latency: 2100, cost: 0.015 },
         { name: 'Generate', latency: 3200, cost: 0.025 },
      ];
@@ -254,6 +283,76 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen bg-hapf-bg text-hapf-text font-sans overflow-hidden">
+      
+      {/* GitHub Connection Modal */}
+      {showGithubModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+            <div className="bg-hapf-panel border border-hapf-border w-[500px] rounded-lg shadow-2xl p-6">
+                <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-lg font-bold flex items-center gap-2"><Github /> Connect Repository</h2>
+                    <button onClick={() => setShowGithubModal(false)} className="text-hapf-muted hover:text-white"><X size={20}/></button>
+                </div>
+                
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-hapf-muted uppercase mb-1">Repository URL</label>
+                        <div className="flex items-center gap-2 bg-black border border-hapf-border rounded px-3 py-2 focus-within:border-hapf-primary">
+                            <Globe size={16} className="text-hapf-muted"/>
+                            <input 
+                                type="text" 
+                                className="bg-transparent w-full outline-none text-sm font-mono"
+                                placeholder="https://github.com/owner/repo"
+                                value={githubConfig.repoUrl}
+                                onChange={(e) => setGithubConfig({...githubConfig, repoUrl: e.target.value})}
+                            />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-hapf-muted uppercase mb-1">
+                            Access Token <span className="text-[10px] font-normal lowercase">(optional, for private repos)</span>
+                        </label>
+                        <div className="flex items-center gap-2 bg-black border border-hapf-border rounded px-3 py-2 focus-within:border-hapf-primary">
+                            <Lock size={16} className="text-hapf-muted"/>
+                            <input 
+                                type="password" 
+                                className="bg-transparent w-full outline-none text-sm font-mono"
+                                placeholder="ghp_..."
+                                value={githubConfig.token}
+                                onChange={(e) => setGithubConfig({...githubConfig, token: e.target.value})}
+                            />
+                        </div>
+                        <p className="text-[10px] text-hapf-muted mt-2">
+                            Token is stored in memory only. We fetch the file tree and read content of configuration files (package.json, etc.) to generate the HAPF spec.
+                        </p>
+                    </div>
+
+                    <div className="flex gap-3 pt-4">
+                        <button 
+                            onClick={() => {
+                                setUseGithub(true);
+                                setShowGithubModal(false);
+                            }}
+                            className="flex-1 bg-hapf-primary hover:bg-blue-600 text-white py-2 rounded font-bold text-sm transition-colors"
+                        >
+                            Connect & Use
+                        </button>
+                        <button 
+                             onClick={() => {
+                                 setUseGithub(false);
+                                 setGithubConfig({ repoUrl: '', token: '' });
+                                 setShowGithubModal(false);
+                             }}
+                            className="px-4 py-2 border border-hapf-border hover:bg-hapf-border rounded font-bold text-sm transition-colors"
+                        >
+                            Disconnect
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="h-14 border-b border-hapf-border flex items-center justify-between px-6 bg-hapf-panel select-none">
         <div className="flex items-center gap-3">
@@ -267,6 +366,20 @@ function App() {
         </div>
 
         <div className="flex items-center gap-4">
+             {selectedExampleKey === 'reverse-engineer' && (
+                 <button 
+                    onClick={() => setShowGithubModal(true)}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold border transition-colors ${
+                        useGithub 
+                        ? 'bg-hapf-panel border-hapf-success text-hapf-success' 
+                        : 'bg-transparent border-hapf-border text-hapf-muted hover:text-white hover:border-hapf-text'
+                    }`}
+                 >
+                    <Github className="w-3 h-3" />
+                    {useGithub ? 'GIT CONNECTED' : 'CONNECT GITHUB'}
+                 </button>
+             )}
+
              <div className="flex items-center gap-2 bg-black/30 rounded-lg p-1 border border-hapf-border">
                 <button 
                   onClick={handleRun}
@@ -329,19 +442,30 @@ function App() {
                 </div>
             </div>
 
-            {/* Bottom: Simulated Input */}
+            {/* Bottom: Input (Synthetic or GitHub Status) */}
             <div className="h-1/3 border-t border-hapf-border flex flex-col bg-hapf-panel/50">
-                <div className="h-8 px-4 flex items-center border-b border-hapf-border text-xs font-mono text-hapf-muted">
-                    <FileJson className="w-3 h-3 mr-2"/>
-                    <span>VIRTUAL INPUT (JSON)</span>
+                <div className="h-8 px-4 flex items-center border-b border-hapf-border text-xs font-mono text-hapf-muted justify-between">
+                    <div className="flex items-center gap-2">
+                        {useGithub ? <Github className="w-3 h-3 text-hapf-success"/> : <FileJson className="w-3 h-3"/>}
+                        <span>{useGithub ? 'REAL INPUT (GITHUB)' : 'VIRTUAL INPUT (JSON)'}</span>
+                    </div>
                 </div>
-                <textarea 
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    className="flex-1 bg-transparent p-4 text-sm font-mono text-hapf-text outline-none resize-none placeholder-hapf-muted/30"
-                    placeholder="Enter JSON config here..."
-                    spellCheck={false}
-                />
+                {useGithub ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-hapf-muted p-4 text-center">
+                        <Github className="w-12 h-12 mb-2 opacity-50"/>
+                        <p className="font-bold text-hapf-text">{githubConfig.repoUrl}</p>
+                        <p className="text-xs mt-1">Input is now pulled directly from the live repository.</p>
+                        <p className="text-[10px] mt-2 opacity-50">Click "Run Pipeline" to fetch and analyze latest commit.</p>
+                    </div>
+                ) : (
+                    <textarea 
+                        value={inputText}
+                        onChange={(e) => setInputText(e.target.value)}
+                        className="flex-1 bg-transparent p-4 text-sm font-mono text-hapf-text outline-none resize-none placeholder-hapf-muted/30"
+                        placeholder="Enter JSON config here..."
+                        spellCheck={false}
+                    />
+                )}
             </div>
         </div>
 
@@ -417,7 +541,7 @@ function App() {
             {/* Status Bar */}
             <div className="h-6 bg-hapf-primary/10 border-t border-hapf-primary/20 flex items-center px-4 text-[10px] font-mono text-hapf-primary justify-between">
                 <span>STATUS: {pipelineStatus}</span>
-                <span>STRATEGY: MAP-REDUCE</span>
+                <span>SOURCE: {useGithub ? 'LIVE GITHUB API' : 'VIRTUAL MOCK'}</span>
             </div>
         </div>
 

@@ -47,3 +47,8 @@ export interface Artifacts {
   architecture: ProjectArchitecture | null;
   spec: GeneratedSpec | null;
 }
+
+export interface GithubConfig {
+  repoUrl: string;
+  token?: string; // Optional PAT
+}
