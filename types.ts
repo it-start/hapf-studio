@@ -46,6 +46,8 @@ export interface Artifacts {
   files: VirtualFile[] | null;
   architecture: ProjectArchitecture | null;
   spec: GeneratedSpec | null;
+  // Generic output for other pipeline examples
+  genericOutput: any | null;
 }
 
 export interface GithubConfig {

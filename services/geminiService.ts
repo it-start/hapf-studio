@@ -97,3 +97,37 @@ export const runGenerateSpec = async (arch: ProjectArchitecture): Promise<Genera
 
   return JSON.parse(response.text || "{}");
 };
+
+/**
+ * Generic Pipeline Simulator
+ * Simulates execution of ANY HAPF code based on input.
+ */
+export const runGenericPipelineSimulation = async (hapfCode: string, inputData: string): Promise<{ logs: string[], output: any }> => {
+  const response = await ai.models.generateContent({
+    model: modelId,
+    contents: `
+    HAPF CODE:
+    ${hapfCode}
+
+    INPUT DATA:
+    ${inputData}
+    `,
+    config: {
+      systemInstruction: `You are the HAPF v1.0 Runtime Simulator. 
+      Execute the provided HAPF pipeline code using the Input Data.
+      Since you do not have access to real external tools (OCR, Kafka, Shell), YOU MUST SIMULATE the execution.
+      
+      1. Trace the pipeline logic step-by-step.
+      2. Simulate realistic output for each module based on the input context.
+      3. If there are conditional branches (if/else), evaluate them based on your simulated data.
+      
+      Return a JSON object with:
+      - logs: An array of strings describing what happened (e.g., "Module 'scan' processed 5 items", "Condition X met").
+      - output: The final result object of the pipeline.`,
+      responseMimeType: "application/json",
+      // NOTE: We do not use responseSchema here because 'output' is dynamic and Type.OBJECT requires properties to be defined.
+    }
+  });
+
+  return JSON.parse(response.text || '{"logs": [], "output": {}}');
+};

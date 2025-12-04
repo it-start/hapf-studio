@@ -13,7 +13,8 @@ import {
   Github,
   X,
   Lock,
-  Globe
+  Globe,
+  Cpu
 } from 'lucide-react';
 import { 
   LogLevel, 
@@ -41,7 +42,8 @@ function App() {
   const [artifacts, setArtifacts] = useState<Artifacts>({ 
     files: null, 
     architecture: null, 
-    spec: null
+    spec: null,
+    genericOutput: null
   });
   const [activeTab, setActiveTab] = useState<'visual' | 'diagram' | 'artifacts' | 'metrics'>('visual');
   
@@ -78,7 +80,7 @@ function App() {
       // Reset pipeline state
       setPipelineStatus(PipelineStatus.IDLE);
       setLogs([]);
-      setArtifacts({ files: null, architecture: null, spec: null });
+      setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null });
     }
   };
 
@@ -88,85 +90,100 @@ function App() {
     
     // Reset state
     setLogs([]);
-    setArtifacts({ files: null, architecture: null, spec: null });
-    setPipelineStatus(PipelineStatus.INGESTING);
+    setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null });
+    
     // Switch to visualizer on run, unless user is in diagram mode
     if (activeTab !== 'diagram') {
         setActiveTab('visual');
     }
     
     addLog("Initializing HAPF Runtime v1.0...", LogLevel.SYSTEM);
-    addLog(`Loading module "hapf-web-studio-self-reflection"`, LogLevel.SYSTEM);
-    addLog(`Environment: gemini-2.5-flash | Context: ${useGithub ? 'Real GitHub Repo' : 'Simulated Synthetic Input'}`, LogLevel.SYSTEM);
-
+    addLog(`Loading module package...`, LogLevel.SYSTEM);
+    
     try {
-      let files: any[] = [];
+      if (selectedExampleKey === 'reverse-engineer') {
+          // --- Specialized Execution for Reverse Engineer Demo ---
+          setPipelineStatus(PipelineStatus.INGESTING);
+          addLog(`Environment: gemini-2.5-flash | Context: ${useGithub ? 'Real GitHub Repo' : 'Simulated Synthetic Input'}`, LogLevel.SYSTEM);
 
-      // --- STEP 1: INGEST (Virtual or Real) ---
-      addLog("Starting Module: ingest.virtual_fs", LogLevel.INFO, "INGEST");
+          let files: any[] = [];
 
-      if (useGithub && githubConfig.repoUrl) {
-         try {
-             addLog(`Fetching metadata from ${githubConfig.repoUrl}...`, LogLevel.INFO, "GITHUB_API");
-             files = await githubService.fetchGithubRepo(
-                 githubConfig.repoUrl, 
-                 githubConfig.token, 
-                 (msg) => addLog(msg, LogLevel.INFO, "GITHUB_API")
-             );
-             addLog(`Successfully indexed ${files.length} relevant files from repository.`, LogLevel.SUCCESS, "INGEST");
-         } catch (e: any) {
-             throw new Error(`GitHub Error: ${e.message}`);
-         }
+          // --- STEP 1: INGEST (Virtual or Real) ---
+          addLog("Starting Module: ingest.virtual_fs", LogLevel.INFO, "INGEST");
+
+          if (useGithub && githubConfig.repoUrl) {
+             try {
+                 addLog(`Fetching metadata from ${githubConfig.repoUrl}...`, LogLevel.INFO, "GITHUB_API");
+                 files = await githubService.fetchGithubRepo(
+                     githubConfig.repoUrl, 
+                     githubConfig.token, 
+                     (msg) => addLog(msg, LogLevel.INFO, "GITHUB_API")
+                 );
+                 addLog(`Successfully indexed ${files.length} relevant files from repository.`, LogLevel.SUCCESS, "INGEST");
+             } catch (e: any) {
+                 throw new Error(`GitHub Error: ${e.message}`);
+             }
+          } else {
+             // Synthetic Ingest
+             files = await geminiService.runIngestFiles(inputText);
+             addLog(`Ingested ${files.length} virtual files from config.`, LogLevel.SUCCESS, "INGEST");
+          }
+
+          setArtifacts(prev => ({ ...prev, files }));
+          
+          // --- STEP 2: ANALYZE ARCHITECTURE ---
+          setPipelineStatus(PipelineStatus.ANALYZING);
+          addLog("Starting Module: analyze.architecture", LogLevel.INFO, "ANALYZE");
+          
+          const architecture = await geminiService.runAnalyzeArchitecture(files);
+          setArtifacts(prev => ({ ...prev, architecture }));
+          addLog(`Detected Framework: ${architecture.framework}`, LogLevel.SUCCESS, "ANALYZE");
+          addLog(`Found ${architecture.dependencies.length} dependencies and ${architecture.store_keys.length} state keys.`, LogLevel.INFO, "ANALYZE");
+          
+          // --- STEP 3: GENERATE SPEC ---
+          setPipelineStatus(PipelineStatus.GENERATING);
+          addLog("Starting Module: generate.spec", LogLevel.INFO, "GENERATE");
+          
+          const spec = await geminiService.runGenerateSpec(architecture);
+          setArtifacts(prev => ({ ...prev, spec }));
+          addLog("HAPF Specification generated successfully.", LogLevel.SUCCESS, "GENERATE");
+          setPipelineStatus(PipelineStatus.COMPLETE);
+
       } else {
-         // Synthetic Ingest
-         files = await geminiService.runIngestFiles(inputText);
-         addLog(`Ingested ${files.length} virtual files from config.`, LogLevel.SUCCESS, "INGEST");
+          // --- Generic Simulation for Other Pipelines ---
+          setPipelineStatus(PipelineStatus.ANALYZING);
+          addLog("Starting Generic Pipeline Simulation...", LogLevel.SYSTEM);
+          
+          const result = await geminiService.runGenericPipelineSimulation(editorCode, inputText);
+          
+          // Replay simulated logs
+          result.logs.forEach(msg => addLog(msg, LogLevel.INFO, "RUNTIME"));
+          
+          setArtifacts(prev => ({ ...prev, genericOutput: result.output }));
+          addLog("Simulation completed successfully.", LogLevel.SUCCESS, "SYSTEM");
+          
+          setPipelineStatus(PipelineStatus.COMPLETE);
       }
-
-      setArtifacts(prev => ({ ...prev, files }));
-      
-      // --- STEP 2: ANALYZE ARCHITECTURE ---
-      setPipelineStatus(PipelineStatus.ANALYZING);
-      addLog("Starting Module: analyze.architecture", LogLevel.INFO, "ANALYZE");
-      
-      const architecture = await geminiService.runAnalyzeArchitecture(files);
-      setArtifacts(prev => ({ ...prev, architecture }));
-      addLog(`Detected Framework: ${architecture.framework}`, LogLevel.SUCCESS, "ANALYZE");
-      addLog(`Found ${architecture.dependencies.length} dependencies and ${architecture.store_keys.length} state keys.`, LogLevel.INFO, "ANALYZE");
-      
-      // --- STEP 3: GENERATE SPEC ---
-      setPipelineStatus(PipelineStatus.GENERATING);
-      addLog("Starting Module: generate.spec", LogLevel.INFO, "GENERATE");
-      
-      const spec = await geminiService.runGenerateSpec(architecture);
-      setArtifacts(prev => ({ ...prev, spec }));
-      addLog("HAPF Specification generated successfully.", LogLevel.SUCCESS, "GENERATE");
-
-      // --- COMPLETE ---
-      setPipelineStatus(PipelineStatus.COMPLETE);
-      addLog("Pipeline execution finished successfully.", LogLevel.SUCCESS, "SYSTEM");
 
     } catch (error: any) {
       console.error(error);
       addLog(`Pipeline crashed: ${error.message || "Unknown error"}`, LogLevel.ERROR, "SYSTEM");
       setPipelineStatus(PipelineStatus.FAILED);
     }
-  }, [inputText, pipelineStatus, addLog, activeTab, useGithub, githubConfig]);
+  }, [inputText, pipelineStatus, addLog, activeTab, useGithub, githubConfig, selectedExampleKey, editorCode]);
 
   const handleReset = () => {
     setPipelineStatus(PipelineStatus.IDLE);
     setLogs([]);
-    setArtifacts({ files: null, architecture: null, spec: null });
+    setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null });
   };
 
-  const isRunDisabled = 
-    (pipelineStatus !== PipelineStatus.IDLE && pipelineStatus !== PipelineStatus.COMPLETE && pipelineStatus !== PipelineStatus.FAILED) ||
-    selectedExampleKey !== 'reverse-engineer';
+  const isRunDisabled = pipelineStatus !== PipelineStatus.IDLE && pipelineStatus !== PipelineStatus.COMPLETE && pipelineStatus !== PipelineStatus.FAILED;
 
   // --- Render Helpers ---
 
   const renderArtifacts = () => {
-    if (!artifacts.files && !artifacts.architecture) {
+    if (!artifacts.files && !artifacts.architecture && !artifacts.genericOutput) {
       return <div className="flex items-center justify-center h-full text-hapf-muted">No artifacts generated yet. Run the pipeline.</div>;
     }
     return (
@@ -238,6 +255,17 @@ function App() {
                 </table>
              </div>
           </div>
+        )}
+
+        {artifacts.genericOutput && (
+            <div className="bg-hapf-panel border border-hapf-primary/30 rounded p-4 flex flex-col gap-3">
+                <h3 className="text-hapf-primary font-bold flex items-center gap-2"><Box size={16}/> Pipeline Output</h3>
+                <div className="bg-black p-3 rounded border border-hapf-border overflow-auto max-h-[500px]">
+                    <pre className="text-hapf-text font-mono text-xs whitespace-pre-wrap">
+                        {JSON.stringify(artifacts.genericOutput, null, 2)}
+                    </pre>
+                </div>
+            </div>
         )}
       </div>
     );
@@ -384,7 +412,7 @@ function App() {
                 <button 
                   onClick={handleRun}
                   disabled={isRunDisabled}
-                  title={selectedExampleKey !== 'reverse-engineer' ? "Simulated execution is only available for the Reverse Engineer pipeline." : "Execute Pipeline"}
+                  title="Execute Pipeline"
                   className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold transition-all ${
                     !isRunDisabled
                     ? 'bg-hapf-primary text-white hover:bg-blue-600 shadow-lg shadow-blue-500/20' 
@@ -508,11 +536,20 @@ function App() {
                             {selectedExampleKey === 'reverse-engineer' ? (
                                 <PipelineVisualizer status={pipelineStatus} />
                             ) : (
-                                <div className="w-full h-full flex items-center justify-center p-8 bg-hapf-panel/30 text-hapf-muted text-xs font-mono text-center">
-                                    <div className="max-w-xs">
-                                        <Layers className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                                        Visualization not available for {PIPELINE_EXAMPLES[selectedExampleKey].name} in demo mode.
-                                    </div>
+                                <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-hapf-panel/30 text-hapf-muted text-xs font-mono text-center">
+                                    {pipelineStatus !== PipelineStatus.IDLE ? (
+                                        <>
+                                            <Cpu className="w-8 h-8 mx-auto mb-4 animate-pulse text-hapf-primary" />
+                                            <p className="text-hapf-primary font-bold mb-1">RUNNING SIMULATION...</p>
+                                            <p className="opacity-70">Executing HAPF pipeline logic via Gemini Engine.</p>
+                                        </>
+                                    ) : (
+                                        <div className="max-w-xs">
+                                            <Layers className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                                            Visual pipeline tracking available for standard demos.<br/>
+                                            For this example, check Logs and Artifacts.
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
