@@ -16,7 +16,8 @@
     "framer-motion": "^12.23.25",
     "recharts": "^3.5.1",
     "reactflow": "^11.10.4",
-    "dagre": "^0.8.5"
+    "dagre": "^0.8.5",
+    "@monaco-editor/react": "^4.6.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

@@ -29,6 +29,7 @@ import * as githubService from './services/githubService';
 import Console from './components/Console';
 import HapfDiagram from './components/HapfDiagram';
 import CodeBlock from './components/CodeBlock';
+import HapfEditor from './components/HapfEditor';
 import { BarChart, XAxis, YAxis, Tooltip, ResponsiveContainer, Bar } from 'recharts';
 
 // Helper for generating IDs
@@ -421,11 +422,9 @@ function App() {
                     </div>
                 </div>
                 <div className="flex-1 bg-[#0d0d10] overflow-hidden relative">
-                    <textarea 
+                    <HapfEditor 
                         value={editorCode}
-                        onChange={(e) => setEditorCode(e.target.value)}
-                        className="w-full h-full bg-[#0d0d10] text-hapf-text font-mono text-sm p-4 outline-none resize-none leading-relaxed whitespace-pre"
-                        spellCheck={false}
+                        onChange={setEditorCode}
                     />
                 </div>
             </div>
