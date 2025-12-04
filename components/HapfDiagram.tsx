@@ -7,9 +7,11 @@ import ReactFlow, {
   useNodesState, 
   useEdgesState, 
   MarkerType,
-  BackgroundVariant
+  BackgroundVariant,
+  Position
 } from 'reactflow';
-import { Layers, Box, FileInput, MonitorPlay } from 'lucide-react';
+import dagre from 'dagre';
+import { Box, FileInput, Settings, Cpu } from 'lucide-react';
 
 interface HapfDiagramProps {
   code: string;
@@ -39,9 +41,61 @@ const moduleNodeStyle = {
   borderColor: '#3b82f6', // Primary color for Modules
 };
 
+const runtimeNodeStyle = {
+  ...nodeStyle,
+  borderColor: '#f59e0b', // Warning/Orange
+  background: 'rgba(245, 158, 11, 0.05)',
+  minWidth: '140px',
+  fontSize: '11px',
+  borderStyle: 'dotted',
+  color: '#fbbf24'
+};
+
 const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  // Use dagre to layout the graph
+  const getLayoutedElements = (nodes: Node[], edges: Edge[]) => {
+    const dagreGraph = new dagre.graphlib.Graph();
+    dagreGraph.setDefaultEdgeLabel(() => ({}));
+
+    // Set graph direction: Left to Right
+    dagreGraph.setGraph({ rankdir: 'LR', nodesep: 60, ranksep: 100 });
+
+    nodes.forEach((node) => {
+      // Approximate sizes based on node types
+      let width = 180;
+      let height = 80;
+      if (node.type === 'runtime') {
+          height = 60;
+          width = 150;
+      }
+      dagreGraph.setNode(node.id, { width, height });
+    });
+
+    edges.forEach((edge) => {
+      dagreGraph.setEdge(edge.source, edge.target);
+    });
+
+    dagre.layout(dagreGraph);
+
+    const layoutedNodes = nodes.map((node) => {
+      const nodeWithPosition = dagreGraph.node(node.id);
+      return {
+        ...node,
+        targetPosition: Position.Left,
+        sourcePosition: Position.Right,
+        // React Flow node position is top-left, Dagre is center
+        position: {
+          x: nodeWithPosition.x - (node.type === 'runtime' ? 75 : 90),
+          y: nodeWithPosition.y - (node.type === 'runtime' ? 30 : 40),
+        },
+      };
+    });
+
+    return { nodes: layoutedNodes, edges };
+  };
 
   const parseHapf = useCallback(() => {
     const newNodes: Node[] = [];
@@ -51,43 +105,152 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
     const nodeMap = new Map<string, string>(); // name -> id
     const variableMap = new Map<string, string>(); // variableName -> sourceModuleId
 
-    // 1. Identify Modules (Nodes)
-    const moduleRegex = /module\s+"([^"]+)"/g;
-    let match;
-    let modIndex = 0;
-    
-    while ((match = moduleRegex.exec(code)) !== null) {
-      const moduleName = match[1];
-      const id = `mod-${moduleName}`;
-      
-      newNodes.push({
-        id,
-        position: { x: 0, y: 0 }, // Position calculated later
-        data: { label: (
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2 text-hapf-primary font-bold border-b border-hapf-border pb-1 mb-1">
-              <Box size={12} />
-              MODULE
-            </div>
-            <div>{moduleName}</div>
-          </div>
-        )},
-        style: moduleNodeStyle,
-        type: 'default',
-      });
-      nodeMap.set(moduleName, id);
-      modIndex++;
+    // Helper: Find matching closing brace
+    const findBlockEnd = (text: string, startIndex: number): number => {
+        let openBraces = 0;
+        let inString = false;
+        
+        for (let i = startIndex; i < text.length; i++) {
+            const char = text[i];
+            if (char === '"' && text[i-1] !== '\\') {
+                inString = !inString;
+            }
+            
+            if (!inString) {
+                if (char === '{') openBraces++;
+                if (char === '}') {
+                    openBraces--;
+                    if (openBraces === 0) return i;
+                }
+            }
+        }
+        return -1;
+    };
+
+    // 1. Scan for Modules and Runtimes
+    // We use a manual scan to handle nested braces properly
+    let cursor = 0;
+    while (cursor < code.length) {
+        // Find "module" keyword
+        const moduleIdx = code.indexOf('module', cursor);
+        if (moduleIdx === -1) break;
+
+        // Ensure it's a standalone word (simple check)
+        const prevChar = code[moduleIdx - 1];
+        if (prevChar && /[a-zA-Z0-9_]/.test(prevChar)) {
+             cursor = moduleIdx + 6;
+             continue;
+        }
+
+        // Extract Name
+        const quoteStart = code.indexOf('"', moduleIdx);
+        const quoteEnd = code.indexOf('"', quoteStart + 1);
+        if (quoteStart === -1 || quoteEnd === -1) { cursor = moduleIdx + 6; continue; }
+        
+        const moduleName = code.substring(quoteStart + 1, quoteEnd);
+        const moduleId = `mod-${moduleName}`;
+
+        // Find Block
+        const blockStart = code.indexOf('{', quoteEnd);
+        if (blockStart === -1) { cursor = quoteEnd + 1; continue; }
+        
+        const blockEnd = findBlockEnd(code, blockStart);
+        if (blockEnd === -1) { cursor = blockStart + 1; continue; }
+
+        const blockContent = code.substring(blockStart + 1, blockEnd);
+
+        // Create Module Node
+        newNodes.push({
+            id: moduleId,
+            position: { x: 0, y: 0 },
+            data: { label: (
+                <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2 text-hapf-primary font-bold border-b border-hapf-border pb-1 mb-1">
+                        <Box size={12} />
+                        MODULE
+                    </div>
+                    <div>{moduleName}</div>
+                </div>
+            )},
+            style: moduleNodeStyle,
+            type: 'default',
+        });
+        nodeMap.set(moduleName, moduleId);
+
+        // Check for Runtime Block inside Module
+        const runtimeIdx = blockContent.indexOf('runtime');
+        if (runtimeIdx !== -1) {
+            // Find ':' then '{'
+            const rtBlockStart = blockContent.indexOf('{', runtimeIdx);
+            if (rtBlockStart !== -1) {
+                const rtBlockEnd = findBlockEnd(blockContent, rtBlockStart);
+                if (rtBlockEnd !== -1) {
+                    const rtContent = blockContent.substring(rtBlockStart + 1, rtBlockEnd);
+                    
+                    // Parse simple key-values
+                    const lines = rtContent.split('\n')
+                        .map(l => l.trim())
+                        .filter(l => l && !l.startsWith('#'))
+                        .map(l => l.replace(/["{},]/g, ''));
+                    
+                    const rtConfig = lines.slice(0, 3).map((l, i) => (
+                        <div key={i} className="truncate opacity-80">{l}</div>
+                    ));
+
+                    const rtId = `rt-${moduleName}`;
+                    newNodes.push({
+                        id: rtId,
+                        position: { x: 0, y: 0 },
+                        data: { label: (
+                            <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2 text-hapf-warning font-bold border-b border-hapf-warning/20 pb-1 mb-1">
+                                    <Settings size={12} />
+                                    RUNTIME
+                                </div>
+                                <div className="font-mono text-[10px]">
+                                    {rtConfig}
+                                </div>
+                            </div>
+                        )},
+                        style: runtimeNodeStyle,
+                        type: 'runtime' // custom marker for dagre sizing
+                    });
+
+                    // Edge: Module -> Runtime (Dashed)
+                    newEdges.push({
+                        id: `e-${moduleId}-${rtId}`,
+                        source: moduleId,
+                        target: rtId,
+                        animated: false,
+                        style: { stroke: '#f59e0b', strokeDasharray: '4 4' },
+                        markerEnd: { type: MarkerType.ArrowClosed, color: '#f59e0b' },
+                    });
+                }
+            }
+        }
+
+        cursor = blockEnd + 1;
     }
 
-    // 2. Identify Pipeline Flows (Edges)
-    const pipelineRegex = /pipeline\s+"([^"]+)"\s*\{([\s\S]*?)\}/g;
-    let pipeMatch;
+    // 2. Scan for Pipelines
+    cursor = 0;
+    while (cursor < code.length) {
+        const pipelineIdx = code.indexOf('pipeline', cursor);
+        if (pipelineIdx === -1) break;
 
-    while ((pipeMatch = pipelineRegex.exec(code)) !== null) {
-        const pipelineContent = pipeMatch[2];
+        const prevChar = code[pipelineIdx - 1];
+        if (prevChar && /[a-zA-Z0-9_]/.test(prevChar)) { cursor = pipelineIdx + 8; continue; }
 
-        // 2a. Strategy: Functional Syntax parsing (robust for multiline args)
-        // Look for pattern `let <var> = run <module>(`
+        const quoteStart = code.indexOf('"', pipelineIdx);
+        const quoteEnd = code.indexOf('"', quoteStart + 1);
+        const blockStart = code.indexOf('{', quoteEnd);
+        const blockEnd = findBlockEnd(code, blockStart);
+
+        if (blockEnd === -1) { cursor = quoteEnd + 1; continue; }
+        
+        const pipelineContent = code.substring(blockStart + 1, blockEnd);
+
+        // 2a. Functional Syntax: let x = run mod(y)
         const runStartRegex = /let\s+(\w+)\s*=\s*run\s+([\w\.]+)\s*\(/g;
         let runMatch;
         while ((runMatch = runStartRegex.exec(pipelineContent)) !== null) {
@@ -97,27 +260,15 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
             if (moduleId) {
                 variableMap.set(outputVar, moduleId);
 
-                // Now extracting arguments is tricky with Regex due to nesting.
-                // We'll approximate by looking at the content inside parens immediately following
-                // Simple heuristic: find all variables referenced in the args
                 const startIndex = runMatch.index + runMatch[0].length;
-                // Find matching closing parenthesis?
-                // For visualization, we just scan for variable names used previously
                 const remainder = pipelineContent.substring(startIndex);
-                // Extract text until closing ')' roughly (ignoring nested logic for now)
-                // or just scan the next 100-200 chars for known variables.
-                
-                // Identify Inputs: Look for `input.<something>` or known `variableMap` keys
-                const potentialVars = Array.from(variableMap.keys());
-                
-                // Find `input.X` usages
+                const argsSection = remainder.split(')')[0]; // Simple approx
+
+                // Input Args
                 const inputUsageRegex = /input\.(\w+)/g;
-                let inputMatch;
-                // Limit search scope to avoid false positives from later code
-                const searchScope = remainder.split(')')[0] + remainder.split(')')[1]; // simplistic
-                
-                while ((inputMatch = inputUsageRegex.exec(searchScope)) !== null) {
-                   const inputName = inputMatch[1];
+                const inputMatches = [...argsSection.matchAll(inputUsageRegex)];
+                inputMatches.forEach(m => {
+                   const inputName = m[1];
                    const sourceId = `input-${inputName}`;
                    
                    if (!newNodes.find(n => n.id === sourceId)) {
@@ -133,7 +284,6 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
                             style: inputNodeStyle,
                         });
                    }
-                   // Create Edge
                    const edgeId = `e-${sourceId}-${moduleId}`;
                    if (!newEdges.find(e => e.id === edgeId)) {
                        newEdges.push({
@@ -145,20 +295,14 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
                            markerEnd: { type: MarkerType.ArrowClosed, color: '#52525b' },
                        });
                    }
-                }
+                });
 
-                // Find usages of previous variables (e.g. `stream` in `run classifier(stream)`)
+                // Variable Args
+                const potentialVars = Array.from(variableMap.keys());
                 potentialVars.forEach(v => {
-                    // Check if variable 'v' appears in the args
-                    // Simple check: regex boundary
+                    // Check if variable is used as full word in args
                     const vRegex = new RegExp(`\\b${v}\\b`);
-                    // We only want to check the arguments part of THIS run call.
-                    // This is hard without full parsing. 
-                    // Approximation: check if it appears between current index and next 'let' or 'run' or '}'
-                    const nextKeyword = remainder.search(/\b(let|run|if|return)\b/);
-                    const argsSegment = nextKeyword === -1 ? remainder : remainder.substring(0, nextKeyword);
-                    
-                    if (vRegex.test(argsSegment)) {
+                    if (vRegex.test(argsSection)) {
                         const sourceModId = variableMap.get(v);
                         if (sourceModId) {
                             const edgeId = `e-${sourceModId}-${moduleId}`;
@@ -178,7 +322,7 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
             }
         }
 
-        // 2b. Strategy: Arrow Syntax: step1 -> step2 -> step3
+        // 2b. Arrow Syntax: a -> b
         const arrowSplitRegex = /([\w\.]+)\s*(?:→|->)\s*([\w\.]+)/g;
         let arrowMatch;
         while((arrowMatch = arrowSplitRegex.exec(pipelineContent)) !== null) {
@@ -188,7 +332,7 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
             let sourceId = nodeMap.get(sourceName);
             let targetId = nodeMap.get(targetName);
 
-            // Infer Nodes
+            // Infer source/target if missing
             if (!sourceId) {
                 sourceId = `inferred-${sourceName}`;
                 if (!newNodes.find(n => n.id === sourceId)) {
@@ -202,16 +346,19 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
                 }
             }
             if (!targetId) {
-                targetId = `mod-${targetName}`; 
-                if (!newNodes.find(n => n.id === targetId)) {
-                    targetId = `inferred-${targetName}`;
-                    newNodes.push({
+                // Check if target is 'inferred' or defined later
+                targetId = `inferred-${targetName}`;
+                // Only create if we haven't seen this ID
+                if (!newNodes.find(n => n.id === targetId) && !nodeMap.has(targetName)) {
+                     newNodes.push({
                         id: targetId,
                         position: { x: 0, y: 0 },
                         data: { label: targetName },
                         style: moduleNodeStyle
                     });
                     nodeMap.set(targetName, targetId);
+                } else if (nodeMap.has(targetName)) {
+                    targetId = nodeMap.get(targetName)!;
                 }
             }
 
@@ -227,61 +374,15 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
                 });
             }
         }
+
+        cursor = blockEnd + 1;
     }
 
-    // 3. Layout: Simple Level-based approach
-    // Calculate ranks (distance from inputs)
-    const ranks = new Map<string, number>();
-    const visited = new Set<string>();
+    // 3. Apply Dagre Layout
+    const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(newNodes, newEdges);
 
-    const getRank = (nodeId: string): number => {
-        if (nodeId.startsWith('input') || nodeId.startsWith('inferred')) return 0;
-        // if no incoming edges, rank 0
-        const incoming = newEdges.filter(e => e.target === nodeId);
-        if (incoming.length === 0) return 0;
-
-        let maxRank = 0;
-        incoming.forEach(e => {
-             // prevent cycle infinite loop simplistic
-             if (!visited.has(e.source)) {
-                 // We need a proper topological sort or memoization, but for small graphs:
-                 // Just assume inputs are 0 and propagate?
-                 // Let's use a multi-pass relaxation
-             }
-        });
-        return 0; 
-    };
-    
-    // Multi-pass rank calculation
-    newNodes.forEach(n => ranks.set(n.id, 0));
-    for(let i=0; i<5; i++) {
-        newEdges.forEach(e => {
-            const sRank = ranks.get(e.source) || 0;
-            const tRank = ranks.get(e.target) || 0;
-            if (sRank + 1 > tRank) {
-                ranks.set(e.target, sRank + 1);
-            }
-        });
-    }
-
-    // Apply layout
-    const LEVEL_WIDTH = 280;
-    const LEVEL_HEIGHT = 120;
-    const levelCounts = new Map<number, number>();
-
-    newNodes.forEach(n => {
-        const rank = ranks.get(n.id) || 0;
-        const count = levelCounts.get(rank) || 0;
-        levelCounts.set(rank, count + 1);
-        
-        n.position = {
-            x: 50 + rank * LEVEL_WIDTH,
-            y: 50 + count * LEVEL_HEIGHT
-        };
-    });
-
-    setNodes(newNodes);
-    setEdges(newEdges);
+    setNodes(layoutedNodes);
+    setEdges(layoutedEdges);
 
   }, [code, setNodes, setEdges]);
 
@@ -303,9 +404,12 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
        >
          <Background color="#27272a" gap={20} variant={BackgroundVariant.Dots} />
          <Controls />
-         <div className="absolute top-4 right-4 z-10 bg-hapf-panel border border-hapf-border p-2 rounded text-[10px] text-hapf-muted font-mono pointer-events-none opacity-80">
+         <div className="absolute top-4 right-4 z-10 bg-hapf-panel border border-hapf-border p-2 rounded text-[10px] text-hapf-muted font-mono pointer-events-none opacity-80 shadow-xl">
             <div className="flex items-center gap-1 mb-1">
                 <Box size={10} className="text-hapf-primary"/> Module
+            </div>
+            <div className="flex items-center gap-1 mb-1">
+                <Settings size={10} className="text-hapf-warning"/> Runtime
             </div>
             <div className="flex items-center gap-1">
                 <FileInput size={10} className="text-hapf-accent"/> Input/Var
