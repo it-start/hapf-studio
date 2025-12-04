@@ -1,35 +1,37 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { Insight, Outline, Draft } from "../types";
+import { Transaction, CategorizedTransaction, Insights, SummaryText } from "../types";
 
 // NOTE: process.env.API_KEY is assumed to be available as per instructions.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const modelId = 'gemini-2.5-flash';
 
 /**
- * Module 1: Ingest
- * Simulates the "ingest.thought_extractor" module.
+ * Module 1: Ingest CSV
+ * input: CSV string
+ * output: List<Transaction>
  */
-export const runIngestModule = async (inputText: string): Promise<Insight[]> => {
+export const runIngestCsv = async (csvData: string): Promise<Transaction[]> => {
   const response = await ai.models.generateContent({
     model: modelId,
-    contents: `Extract insights from the following raw text. Ignore filler. 
+    contents: `Parse the following CSV data into a strict list of transaction objects.
     
-    <raw_input>
-    ${inputText}
-    </raw_input>`,
+    <csv_data>
+    ${csvData}
+    </csv_data>`,
     config: {
-      systemInstruction: "You are a Mining Droid. Extract valuable insights. Map output to JSON.",
+      systemInstruction: "You are a CSV parser module. Extract valid transactions.",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.ARRAY,
         items: {
           type: Type.OBJECT,
           properties: {
-            topic: { type: Type.STRING },
-            source_text: { type: Type.STRING },
-            importance: { type: Type.INTEGER },
+            date: { type: Type.STRING, description: "ISO8601 date string" },
+            description: { type: Type.STRING },
+            amount: { type: Type.NUMBER },
+            currency: { type: Type.STRING },
           },
-          required: ["topic", "source_text", "importance"],
+          required: ["date", "description", "amount", "currency"],
         },
       },
     },
@@ -39,34 +41,75 @@ export const runIngestModule = async (inputText: string): Promise<Insight[]> => 
 };
 
 /**
- * Module 2: Architect
- * Simulates the "plan.architect" module.
+ * Module 2: Categorize Transactions
+ * input: List<Transaction>
+ * output: List<CategorizedTransaction>
  */
-export const runArchitectModule = async (insights: Insight[]): Promise<Outline> => {
+export const runCategorizeTransactions = async (transactions: Transaction[]): Promise<CategorizedTransaction[]> => {
+  // We process them in a single batch for this demo
   const response = await ai.models.generateContent({
     model: modelId,
-    contents: `Create an article outline based on these insights: ${JSON.stringify(insights)}`,
+    contents: `Categorize the following transactions: ${JSON.stringify(transactions)}`,
     config: {
-      systemInstruction: "Act as a Chief Editor. Organize insights into a narrative structure. Merge duplicates.",
+      systemInstruction: "Categorize each transaction into exactly one of: Food, Transport, Utilities, Entertainment, Other.",
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            transaction: {
+              type: Type.OBJECT,
+              properties: {
+                date: { type: Type.STRING },
+                description: { type: Type.STRING },
+                amount: { type: Type.NUMBER },
+                currency: { type: Type.STRING },
+              }
+            },
+            category: { 
+              type: Type.STRING, 
+              enum: ["Food", "Transport", "Utilities", "Entertainment", "Other"] 
+            },
+          },
+          required: ["transaction", "category"],
+        },
+      },
+    },
+  });
+
+  return JSON.parse(response.text || "[]");
+};
+
+/**
+ * Module 3: Analyze Spending
+ * input: List<CategorizedTransaction>
+ * output: Insights
+ */
+export const runAnalyzeSpending = async (categorized: CategorizedTransaction[]): Promise<Insights> => {
+  const response = await ai.models.generateContent({
+    model: modelId,
+    contents: `Analyze these categorized transactions: ${JSON.stringify(categorized)}`,
+    config: {
+      systemInstruction: "Calculate total spending per category and identify the largest category.",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          title: { type: Type.STRING },
-          sections: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                header: { type: Type.STRING },
-                key_points: { type: Type.ARRAY, items: { type: Type.STRING } },
-                estimated_tokens: { type: Type.INTEGER },
-              },
-              required: ["header", "key_points"],
-            },
+          total_spending: { type: Type.NUMBER },
+          spending_per_category: { 
+            type: Type.OBJECT,
+            properties: {
+               Food: { type: Type.NUMBER },
+               Transport: { type: Type.NUMBER },
+               Utilities: { type: Type.NUMBER },
+               Entertainment: { type: Type.NUMBER },
+               Other: { type: Type.NUMBER },
+            }
           },
+          largest_category: { type: Type.STRING },
         },
-        required: ["title", "sections"],
+        required: ["total_spending", "spending_per_category", "largest_category"],
       },
     },
   });
@@ -75,48 +118,26 @@ export const runArchitectModule = async (insights: Insight[]): Promise<Outline> 
 };
 
 /**
- * Module 3: Writer (Map Step)
- * Simulates "write.section_expander" for a single section.
+ * Module 4: Generate Summary
+ * input: Insights
+ * output: SummaryText
  */
-export const runWriterModule = async (sectionHeader: string, keyPoints: string[]): Promise<string> => {
+export const runGenerateSummary = async (insights: Insights): Promise<SummaryText> => {
   const response = await ai.models.generateContent({
     model: modelId,
-    contents: `Write the section '${sectionHeader}'. Key points: ${keyPoints.join(", ")}`,
+    contents: `Generate a summary for these financial insights: ${JSON.stringify(insights)}`,
     config: {
-      systemInstruction: "You are a Tech Writer. Tone: Smart & Ironic. Use Markdown. Keep it concise (under 200 words).",
-    },
-  });
-
-  return response.text || "";
-};
-
-/**
- * Module 4: Critic
- * Simulates "qa.critic".
- */
-export const runCriticModule = async (fullText: string): Promise<Draft> => {
-  const response = await ai.models.generateContent({
-    model: modelId,
-    contents: fullText,
-    config: {
-      systemInstruction: "Rate the text quality. Check for logic and contradictions.",
+      systemInstruction: "Generate a concise summary of the financial insights. Keep it under 100 words.",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          readability_score: { type: Type.NUMBER },
-          hallucination_check_passed: { type: Type.BOOLEAN },
-          content_markdown: { type: Type.STRING }, // Just echoing back specifically for the data structure, usually we wouldn't echo.
+          text: { type: Type.STRING },
         },
-        required: ["readability_score", "hallucination_check_passed"],
+        required: ["text"],
       },
     },
   });
 
-  const result = JSON.parse(response.text || "{}");
-  // Ensure we keep the content
-  return {
-    ...result,
-    content_markdown: fullText
-  };
+  return JSON.parse(response.text || "{}");
 };

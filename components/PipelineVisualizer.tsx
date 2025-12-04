@@ -1,6 +1,6 @@
 import React from 'react';
 import { PipelineStatus } from '../types';
-import { Database, BrainCircuit, PenTool, SearchCheck, FileText, ArrowRight } from 'lucide-react';
+import { FileSpreadsheet, Tags, PieChart, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface PipelineVisualizerProps {
@@ -65,9 +65,9 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({ status }) => {
     const order = [
       PipelineStatus.IDLE,
       PipelineStatus.INGESTING,
-      PipelineStatus.PLANNING,
-      PipelineStatus.WRITING,
-      PipelineStatus.REVIEWING,
+      PipelineStatus.CATEGORIZING,
+      PipelineStatus.ANALYZING,
+      PipelineStatus.SUMMARIZING,
       PipelineStatus.COMPLETE
     ];
     
@@ -76,7 +76,7 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({ status }) => {
 
     const isActive = status === stepStatus;
     const isCompleted = currentIndex > stepIndex || status === PipelineStatus.COMPLETE;
-    const isError = status === PipelineStatus.FAILED && isActive; // Simplified error logic
+    const isError = status === PipelineStatus.FAILED && isActive;
 
     return { isActive, isCompleted, isError };
   };
@@ -91,43 +91,35 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({ status }) => {
       </div>
 
       <div className="flex items-center gap-2">
-        {/* Step 1: Ingest */}
+        {/* Step 1: Ingest CSV */}
         <Node 
-          icon={Database} 
+          icon={FileSpreadsheet} 
           label="INGEST" 
           {...getStatusState(PipelineStatus.INGESTING)} 
         />
         <Connector active={status === PipelineStatus.INGESTING} />
 
-        {/* Step 2: Architect */}
+        {/* Step 2: Categorize */}
         <Node 
-          icon={BrainCircuit} 
-          label="PLAN" 
-          {...getStatusState(PipelineStatus.PLANNING)} 
+          icon={Tags} 
+          label="CATEGORIZE" 
+          {...getStatusState(PipelineStatus.CATEGORIZING)} 
         />
-        <Connector active={status === PipelineStatus.PLANNING} />
+        <Connector active={status === PipelineStatus.CATEGORIZING} />
 
-        {/* Step 3: Writer */}
+        {/* Step 3: Analyze */}
         <Node 
-          icon={PenTool} 
-          label="WRITE" 
-          {...getStatusState(PipelineStatus.WRITING)} 
+          icon={PieChart} 
+          label="ANALYZE" 
+          {...getStatusState(PipelineStatus.ANALYZING)} 
         />
-        <Connector active={status === PipelineStatus.WRITING} />
+        <Connector active={status === PipelineStatus.ANALYZING} />
 
-        {/* Step 4: Critic */}
-        <Node 
-          icon={SearchCheck} 
-          label="QA" 
-          {...getStatusState(PipelineStatus.REVIEWING)} 
-        />
-        <Connector active={status === PipelineStatus.REVIEWING} />
-
-        {/* Final */}
+        {/* Step 4: Summary */}
         <Node 
           icon={FileText} 
-          label="PUBLISH" 
-          {...getStatusState(PipelineStatus.COMPLETE)} 
+          label="SUMMARY" 
+          {...getStatusState(PipelineStatus.SUMMARIZING)} 
         />
       </div>
     </div>

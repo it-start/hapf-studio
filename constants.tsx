@@ -1,50 +1,96 @@
 import React from 'react';
 
-export const INITIAL_HAPF_CODE = `package "chaos-writer-pro" {
+export const INITIAL_HAPF_CODE = `package "finance-insight-generator" {
   version: "1.0.0"
-  standard: "HAPF-Core-v1.0"
-  
-  env: {
-    model: "gemini-2.5-flash"
-    determinism: "strict"
-  }
+  doc: "Generates financial insights from transaction data."
 }
 
-type Insight struct {
-  topic: Enum["Tech", "Life"]
-  importance: Int(1..10)
+# --- Data Contract for Transactions ---
+type Transaction {
+  date: ISO8601
+  description: String
+  amount: Decimal
+  currency: String
 }
 
-module "ingest.thought_extractor" {
-  contract: { input: String, output: List<Insight> }
-  runtime: { strategy: "stream", concurrency: 3 }
-  instructions: {
-    system: "Extract valuable insights from noise."
-  }
+# --- Module: Ingest CSV ---
+module "ingest.csv" {
+  input: "CSVData"
+  output: "List<Transaction>"
+
+  ai.task: """
+    Parse the CSV data and extract transactions. Ensure dates are ISO8601.
+  """
+  validation: """
+    Each transaction must have a date, description, amount, and currency.
+  """
+  resources: { max_tokens: 2000 }
 }
 
-module "plan.architect" {
-  contract: { input: List<Insight>, output: Outline }
-  runtime: { strategy: "single-shot" }
+# --- Module: Categorize Transactions ---
+module "categorize.transactions" {
+  input: "List<Transaction>"
+  output: "List<CategorizedTransaction>"
+
+  ai.task: """
+    Categorize each transaction into one of the following categories: 
+    Food, Transport, Utilities, Entertainment, Other.
+  """
+  validation: """
+    Each transaction must have exactly one category.
+  """
 }
 
-module "write.section_expander" {
-  contract: { input: List<SectionPlan>, output: List<String> }
-  runtime: { strategy: "map-reduce" }
+type CategorizedTransaction {
+  transaction: Transaction
+  category: Enum["Food", "Transport", "Utilities", "Entertainment", "Other"]
 }
 
-pipeline "chaos_to_article" {
-  let raw = io.read("brain_dump.txt")
-  let insights = run ingest.thought_extractor(raw)
-  let outline = run plan.architect(insights)
-  let chunks = run write.section_expander(outline)
-  let full = util.join(chunks)
-  run qa.critic(full)
+# --- Module: Analyze Spending Patterns ---
+module "analyze.spending" {
+  input: "List<CategorizedTransaction>"
+  output: "Insights"
+
+  ai.task: """
+    Calculate total spending per category. Identify the largest spending categories.
+  """
+}
+
+type Insights {
+  total_spending: Decimal
+  spending_per_category: Map<String, Decimal>
+  largest_category: String
+}
+
+# --- Module: Generate Summary ---
+module "generate.summary" {
+  input: "Insights"
+  output: "SummaryText"
+
+  ai.task: """
+    Generate a concise summary of the financial insights. Keep it under 100 words.
+  """
+}
+
+type SummaryText {
+  text: String
+}
+
+# --- Pipeline: Financial Insight Generation ---
+pipeline "financial-insight" {
+  steps: [
+    ingest.csv → categorize.transactions → analyze.spending → generate.summary
+  ]
 }`;
 
-export const DEFAULT_INPUT_TEXT = `Короче, HAPF это круто, потому что JSON schema рулит. Старые промпты — это прошлый век. 
-Надо сказать про Map-Reduce, типа как мы большие файлы жуем. 
-И еще про безопасность, типа XML теги. 
-Ну и пример кода дай.
-Gemini API 2.5 Flash is incredibly fast for this.
-Strict typing prevents hallucinations.`;
+export const DEFAULT_INPUT_TEXT = `date,description,amount,currency
+2023-10-01,Uber Ride,25.50,USD
+2023-10-02,Grocery Store,120.00,USD
+2023-10-03,Netflix Subscription,15.99,USD
+2023-10-04,Electric Bill,85.20,USD
+2023-10-05,Coffee Shop,4.50,USD
+2023-10-06,Cinema Tickets,30.00,USD
+2023-10-07,Gas Station,45.00,USD
+2023-10-08,Restaurant Dinner,75.00,USD
+2023-10-09,Spotify,9.99,USD
+2023-10-10,Internet Bill,60.00,USD`;

@@ -17,39 +17,40 @@ export interface LogEntry {
 export enum PipelineStatus {
   IDLE = 'IDLE',
   INGESTING = 'INGESTING',
-  PLANNING = 'PLANNING',
-  WRITING = 'WRITING',
-  REVIEWING = 'REVIEWING',
+  CATEGORIZING = 'CATEGORIZING',
+  ANALYZING = 'ANALYZING',
+  SUMMARIZING = 'SUMMARIZING',
   COMPLETE = 'COMPLETE',
   FAILED = 'FAILED'
 }
 
-// HAPF Data Structures defined in the prompt
-export interface Insight {
-  topic: string;
-  source_text: string;
-  importance: number;
+// --- Financial HAPF Data Structures ---
+
+export interface Transaction {
+  date: string;
+  description: string;
+  amount: number;
+  currency: string;
 }
 
-export interface SectionPlan {
-  header: string;
-  key_points: string[];
-  estimated_tokens: number;
+export interface CategorizedTransaction {
+  transaction: Transaction;
+  category: string;
 }
 
-export interface Outline {
-  title: string;
-  sections: SectionPlan[];
+export interface Insights {
+  total_spending: number;
+  spending_per_category: Record<string, number>;
+  largest_category: string;
 }
 
-export interface Draft {
-  content_markdown: string;
-  readability_score: number;
-  hallucination_check_passed: boolean;
+export interface SummaryText {
+  text: string;
 }
 
 export interface Artifacts {
-  insights: Insight[] | null;
-  outline: Outline | null;
-  draft: Draft | null;
+  transactions: Transaction[] | null;
+  categorized: CategorizedTransaction[] | null;
+  insights: Insights | null;
+  summary: SummaryText | null;
 }

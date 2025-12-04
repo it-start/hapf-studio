@@ -1,13 +1,13 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { 
   Play, 
   RotateCcw, 
-  Cpu, 
-  Layers, 
-  FileJson, 
+  Code2, 
   FileText, 
   Activity,
-  Code2
+  TableProperties,
+  PieChart,
+  FileSpreadsheet
 } from 'lucide-react';
 import { 
   LogLevel, 
@@ -20,7 +20,7 @@ import * as geminiService from './services/geminiService';
 import Console from './components/Console';
 import PipelineVisualizer from './components/PipelineVisualizer';
 import CodeBlock from './components/CodeBlock';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 // Helper for generating IDs
 const uid = () => Math.random().toString(36).substr(2, 9);
@@ -29,7 +29,12 @@ function App() {
   // --- State ---
   const [pipelineStatus, setPipelineStatus] = useState<PipelineStatus>(PipelineStatus.IDLE);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [artifacts, setArtifacts] = useState<Artifacts>({ insights: null, outline: null, draft: null });
+  const [artifacts, setArtifacts] = useState<Artifacts>({ 
+    transactions: null, 
+    categorized: null, 
+    insights: null, 
+    summary: null 
+  });
   const [activeTab, setActiveTab] = useState<'visual' | 'artifacts' | 'metrics'>('visual');
   const [inputText, setInputText] = useState(DEFAULT_INPUT_TEXT);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -52,67 +57,50 @@ function App() {
     
     // Reset state
     setLogs([]);
-    setArtifacts({ insights: null, outline: null, draft: null });
+    setArtifacts({ transactions: null, categorized: null, insights: null, summary: null });
     setPipelineStatus(PipelineStatus.INGESTING);
     setActiveTab('visual');
     
     addLog("Initializing HAPF Runtime v1.0...", LogLevel.SYSTEM);
-    addLog(`Loading module "chaos-writer-pro"`, LogLevel.SYSTEM);
+    addLog(`Loading module "finance-insight-generator"`, LogLevel.SYSTEM);
     addLog(`Environment: gemini-2.5-flash | Determinism: STRICT`, LogLevel.SYSTEM);
 
     try {
-      // --- STEP 1: INGEST ---
-      addLog("Starting Module: ingest.thought_extractor", LogLevel.INFO, "INGEST");
-      addLog(`Stream strategy active. Processing input buffer (${inputText.length} chars)`, LogLevel.INFO, "INGEST");
+      // --- STEP 1: INGEST CSV ---
+      addLog("Starting Module: ingest.csv", LogLevel.INFO, "INGEST");
       
-      const insights = await geminiService.runIngestModule(inputText);
+      const transactions = await geminiService.runIngestCsv(inputText);
+      setArtifacts(prev => ({ ...prev, transactions }));
+      addLog(`Parsed ${transactions.length} transactions from CSV.`, LogLevel.SUCCESS, "INGEST");
+      
+      // --- STEP 2: CATEGORIZE ---
+      setPipelineStatus(PipelineStatus.CATEGORIZING);
+      addLog("Starting Module: categorize.transactions", LogLevel.INFO, "CATEGORIZE");
+      
+      const categorized = await geminiService.runCategorizeTransactions(transactions);
+      setArtifacts(prev => ({ ...prev, categorized }));
+      addLog(`Categorized ${categorized.length} transactions successfully.`, LogLevel.SUCCESS, "CATEGORIZE");
+      
+      // --- STEP 3: ANALYZE ---
+      setPipelineStatus(PipelineStatus.ANALYZING);
+      addLog("Starting Module: analyze.spending", LogLevel.INFO, "ANALYZE");
+      
+      const insights = await geminiService.runAnalyzeSpending(categorized);
       setArtifacts(prev => ({ ...prev, insights }));
-      addLog(`Extracted ${insights.length} insights from raw stream.`, LogLevel.SUCCESS, "INGEST");
-      insights.forEach(i => addLog(`> [${i.topic}] ${i.source_text.substring(0, 40)}... (Imp: ${i.importance})`, LogLevel.INFO, "INGEST"));
+      addLog(`Analysis complete. Largest Category: ${insights.largest_category}`, LogLevel.SUCCESS, "ANALYZE");
+      addLog(`Total Spend: $${insights.total_spending}`, LogLevel.INFO, "ANALYZE");
 
-      // --- STEP 2: PLAN ---
-      setPipelineStatus(PipelineStatus.PLANNING);
-      addLog("Starting Module: plan.architect", LogLevel.INFO, "PLAN");
+      // --- STEP 4: SUMMARY ---
+      setPipelineStatus(PipelineStatus.SUMMARIZING);
+      addLog("Starting Module: generate.summary", LogLevel.INFO, "SUMMARY");
       
-      const outline = await geminiService.runArchitectModule(insights);
-      setArtifacts(prev => ({ ...prev, outline }));
-      addLog(`Blueprint generated: "${outline.title}"`, LogLevel.SUCCESS, "PLAN");
-      addLog(`Defined ${outline.sections.length} logical sections.`, LogLevel.INFO, "PLAN");
-
-      // --- STEP 3: WRITE (Map-Reduce Simulation) ---
-      setPipelineStatus(PipelineStatus.WRITING);
-      addLog("Starting Module: write.section_expander", LogLevel.INFO, "WRITE");
-      addLog(`Spawning ${outline.sections.length} parallel workers (Map-Reduce)...`, LogLevel.WARN, "WRITE");
-
-      const sectionPromises = outline.sections.map(async (section) => {
-        addLog(`Worker started for section: ${section.header}`, LogLevel.INFO, "WRITE");
-        const text = await geminiService.runWriterModule(section.header, section.key_points);
-        addLog(`Worker finished section: ${section.header} (${text.length} chars)`, LogLevel.SUCCESS, "WRITE");
-        return text;
-      });
-
-      const sectionTexts = await Promise.all(sectionPromises);
-      const fullDraftText = sectionTexts.join("\n\n");
-      addLog("All workers returned. Reducing to single artifact.", LogLevel.SYSTEM, "WRITE");
-
-      // --- STEP 4: QA ---
-      setPipelineStatus(PipelineStatus.REVIEWING);
-      addLog("Starting Module: qa.critic", LogLevel.INFO, "QA");
-      
-      const review = await geminiService.runCriticModule(fullDraftText);
-      setArtifacts(prev => ({ ...prev, draft: review }));
-      
-      addLog(`Critic Score: ${review.readability_score}`, review.readability_score > 0.7 ? LogLevel.SUCCESS : LogLevel.WARN, "QA");
-      if (review.hallucination_check_passed) {
-        addLog("Hallucination check passed.", LogLevel.SUCCESS, "QA");
-      } else {
-        addLog("Hallucination check FAILED.", LogLevel.ERROR, "QA");
-      }
+      const summary = await geminiService.runGenerateSummary(insights);
+      setArtifacts(prev => ({ ...prev, summary }));
+      addLog("Executive summary generated.", LogLevel.SUCCESS, "SUMMARY");
 
       // --- COMPLETE ---
       setPipelineStatus(PipelineStatus.COMPLETE);
       addLog("Pipeline execution finished successfully.", LogLevel.SUCCESS, "SYSTEM");
-      addLog("Artifact 'article.md' ready for export.", LogLevel.SYSTEM, "SYSTEM");
 
     } catch (error: any) {
       console.error(error);
@@ -124,41 +112,86 @@ function App() {
   const handleReset = () => {
     setPipelineStatus(PipelineStatus.IDLE);
     setLogs([]);
-    setArtifacts({ insights: null, outline: null, draft: null });
+    setArtifacts({ transactions: null, categorized: null, insights: null, summary: null });
   };
 
   // --- Render Helpers ---
 
   const renderArtifacts = () => {
-    if (!artifacts.insights && !artifacts.outline && !artifacts.draft) {
+    if (!artifacts.categorized && !artifacts.insights) {
       return <div className="flex items-center justify-center h-full text-hapf-muted">No artifacts generated yet. Run the pipeline.</div>;
     }
     return (
       <div className="space-y-6 p-4 font-mono text-sm">
-        {artifacts.draft && (
-            <div className="bg-hapf-panel border border-hapf-success/30 rounded p-4">
-            <h3 className="text-hapf-success font-bold mb-2 flex items-center gap-2"><FileText size={16}/> Final Draft</h3>
-            <div className="max-h-60 overflow-y-auto whitespace-pre-wrap text-hapf-text bg-black/30 p-2 rounded">
-                {artifacts.draft.content_markdown}
-            </div>
-            </div>
-        )}
-        {artifacts.outline && (
-          <div className="bg-hapf-panel border border-hapf-primary/30 rounded p-4">
-            <h3 className="text-hapf-primary font-bold mb-2 flex items-center gap-2"><Layers size={16}/> Structure</h3>
-            <ul className="list-disc pl-5 space-y-1 text-hapf-text">
-              {artifacts.outline.sections.map((s, i) => (
-                <li key={i}>
-                  <span className="font-bold">{s.header}</span> <span className="text-xs text-hapf-muted">({s.estimated_tokens} tokens)</span>
-                </li>
-              ))}
-            </ul>
+        
+        {artifacts.summary && (
+          <div className="bg-hapf-panel border border-hapf-success/30 rounded p-4">
+             <h3 className="text-hapf-success font-bold mb-2 flex items-center gap-2"><FileText size={16}/> Executive Summary</h3>
+             <p className="text-hapf-text leading-relaxed">
+                {artifacts.summary.text}
+             </p>
           </div>
         )}
+
         {artifacts.insights && (
+            <div className="bg-hapf-panel border border-hapf-primary/30 rounded p-4">
+                 <h3 className="text-hapf-primary font-bold mb-4 flex items-center gap-2"><PieChart size={16}/> Spending Breakdown</h3>
+                 <div className="h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={Object.entries(artifacts.insights.spending_per_category || {}).map(([name, value]) => ({ name, value }))}>
+                            <XAxis dataKey="name" stroke="#52525b" fontSize={10} tickLine={false} axisLine={false}/>
+                            <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val}`}/>
+                            <Tooltip 
+                                contentStyle={{ backgroundColor: '#18181b', borderColor: '#3f3f46', color: '#fff' }}
+                                itemStyle={{ color: '#3b82f6' }}
+                                cursor={{fill: '#27272a'}}
+                            />
+                            <Bar dataKey="value" fill="#3b82f6" radius={[4, 4, 0, 0]}>
+                                {Object.entries(artifacts.insights.spending_per_category || {}).map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={entry[0] === artifacts.insights?.largest_category ? '#f59e0b' : '#3b82f6'} />
+                                ))}
+                            </Bar>
+                        </BarChart>
+                    </ResponsiveContainer>
+                 </div>
+                 <div className="mt-4 flex gap-4 text-xs">
+                     <div className="bg-black/30 p-2 rounded border border-hapf-border flex-1">
+                         <div className="text-hapf-muted uppercase">Total</div>
+                         <div className="text-lg font-bold text-white">${(artifacts.insights.total_spending || 0).toFixed(2)}</div>
+                     </div>
+                     <div className="bg-black/30 p-2 rounded border border-hapf-border flex-1">
+                         <div className="text-hapf-muted uppercase">Top Category</div>
+                         <div className="text-lg font-bold text-hapf-warning">{artifacts.insights.largest_category || 'N/A'}</div>
+                     </div>
+                 </div>
+            </div>
+        )}
+
+        {artifacts.categorized && (
           <div className="bg-hapf-panel border border-hapf-accent/30 rounded p-4">
-             <h3 className="text-hapf-accent font-bold mb-2 flex items-center gap-2"><FileJson size={16}/> Insights JSON</h3>
-             <pre className="text-xs overflow-x-auto">{JSON.stringify(artifacts.insights, null, 2)}</pre>
+             <h3 className="text-hapf-accent font-bold mb-2 flex items-center gap-2"><TableProperties size={16}/> Categorized Ledger</h3>
+             <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                        <tr className="text-hapf-muted border-b border-hapf-border">
+                            <th className="py-2">Date</th>
+                            <th className="py-2">Description</th>
+                            <th className="py-2">Category</th>
+                            <th className="py-2 text-right">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {artifacts.categorized.map((item, idx) => (
+                            <tr key={idx} className="border-b border-hapf-border/50 hover:bg-white/5">
+                                <td className="py-2 text-hapf-muted">{item.transaction?.date || '-'}</td>
+                                <td className="py-2">{item.transaction?.description || '-'}</td>
+                                <td className="py-2 text-hapf-accent">{item.category || 'Uncategorized'}</td>
+                                <td className="py-2 text-right font-mono">${(item.transaction?.amount || 0).toFixed(2)}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+             </div>
           </div>
         )}
       </div>
@@ -167,10 +200,10 @@ function App() {
 
   const renderMetrics = () => {
      const data = [
-        { name: 'Ingest', latency: 120, cost: 0.002 },
-        { name: 'Plan', latency: 450, cost: 0.005 },
-        { name: 'Write', latency: 2100, cost: 0.015 },
-        { name: 'QA', latency: 800, cost: 0.003 },
+        { name: 'Ingest CSV', latency: 320, cost: 0.001 },
+        { name: 'Categorize', latency: 1500, cost: 0.012 },
+        { name: 'Analyze', latency: 600, cost: 0.005 },
+        { name: 'Summary', latency: 450, cost: 0.003 },
      ];
 
      return (
@@ -193,11 +226,11 @@ function App() {
             <div className="grid grid-cols-2 gap-4 mt-6">
                 <div className="bg-hapf-panel p-3 rounded border border-hapf-border">
                     <div className="text-xs text-hapf-muted uppercase">Total Tokens</div>
-                    <div className="text-xl font-bold text-hapf-primary">~4,250</div>
+                    <div className="text-xl font-bold text-hapf-primary">~2,150</div>
                 </div>
                 <div className="bg-hapf-panel p-3 rounded border border-hapf-border">
                     <div className="text-xs text-hapf-muted uppercase">Est. Cost</div>
-                    <div className="text-xl font-bold text-hapf-success">$0.0012</div>
+                    <div className="text-xl font-bold text-hapf-success">$0.0008</div>
                 </div>
             </div>
         </div>
@@ -252,7 +285,7 @@ function App() {
             <div className="flex-1 flex flex-col min-h-0">
                 <div className="h-8 bg-hapf-panel border-b border-hapf-border flex items-center px-4 gap-2 text-xs font-mono text-hapf-muted">
                     <Code2 className="w-3 h-3"/>
-                    <span>chaos-writer-pro.hapf</span>
+                    <span>finance-insight-generator.hapf</span>
                     <span className="ml-auto opacity-50">Read-Only</span>
                 </div>
                 <div className="flex-1 bg-[#0d0d10] overflow-hidden">
@@ -260,17 +293,17 @@ function App() {
                 </div>
             </div>
 
-            {/* Bottom: Simulated Input (brain_dump.txt) */}
+            {/* Bottom: Simulated Input */}
             <div className="h-1/3 border-t border-hapf-border flex flex-col bg-hapf-panel/50">
                 <div className="h-8 px-4 flex items-center border-b border-hapf-border text-xs font-mono text-hapf-muted">
-                    <FileText className="w-3 h-3 mr-2"/>
-                    <span>brain_dump.txt (Input Stream)</span>
+                    <FileSpreadsheet className="w-3 h-3 mr-2"/>
+                    <span>transactions.csv (Input Stream)</span>
                 </div>
                 <textarea 
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
                     className="flex-1 bg-transparent p-4 text-sm font-mono text-hapf-text outline-none resize-none placeholder-hapf-muted/30"
-                    placeholder="Enter your raw text here..."
+                    placeholder="Enter CSV data here..."
                 />
             </div>
         </div>
@@ -327,7 +360,7 @@ function App() {
             {/* Status Bar */}
             <div className="h-6 bg-hapf-primary/10 border-t border-hapf-primary/20 flex items-center px-4 text-[10px] font-mono text-hapf-primary justify-between">
                 <span>STATUS: {pipelineStatus}</span>
-                <span>HEAP: 42MB</span>
+                <span>HEAP: 64MB</span>
             </div>
         </div>
 
