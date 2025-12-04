@@ -1,0 +1,5 @@
+{
+  "name": "HAPF v1.0 Studio",
+  "description": "A developer environment for the Human–AI Program Format. Visualize, edit, and execute HAPF pipelines using the Gemini API.",
+  "requestFramePermissions": []
+}
