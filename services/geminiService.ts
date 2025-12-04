@@ -1,37 +1,36 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { Transaction, CategorizedTransaction, Insights, SummaryText } from "../types";
+import { VirtualFile, ProjectArchitecture, GeneratedSpec } from "../types";
 
 // NOTE: process.env.API_KEY is assumed to be available as per instructions.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const modelId = 'gemini-2.5-flash';
 
 /**
- * Module 1: Ingest CSV
- * input: CSV string
- * output: List<Transaction>
+ * Module 1: Ingest Virtual FS
+ * input: JSON string
+ * output: List<VirtualFile>
  */
-export const runIngestCsv = async (csvData: string): Promise<Transaction[]> => {
+export const runIngestFiles = async (jsonInput: string): Promise<VirtualFile[]> => {
   const response = await ai.models.generateContent({
     model: modelId,
-    contents: `Parse the following CSV data into a strict list of transaction objects.
+    contents: `Parse the following JSON input into a list of VirtualFile objects.
     
-    <csv_data>
-    ${csvData}
-    </csv_data>`,
+    <json_input>
+    ${jsonInput}
+    </json_input>`,
     config: {
-      systemInstruction: "You are a CSV parser module. Extract valid transactions.",
+      systemInstruction: "You are a Virtual File System parser. Extract the file list from the 'virtual_files' key in the JSON.",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.ARRAY,
         items: {
           type: Type.OBJECT,
           properties: {
-            date: { type: Type.STRING, description: "ISO8601 date string" },
-            description: { type: Type.STRING },
-            amount: { type: Type.NUMBER },
-            currency: { type: Type.STRING },
+            path: { type: Type.STRING },
+            intent: { type: Type.STRING },
+            content_hint: { type: Type.STRING },
           },
-          required: ["date", "description", "amount", "currency"],
+          required: ["path", "intent", "content_hint"],
         },
       },
     },
@@ -41,75 +40,31 @@ export const runIngestCsv = async (csvData: string): Promise<Transaction[]> => {
 };
 
 /**
- * Module 2: Categorize Transactions
- * input: List<Transaction>
- * output: List<CategorizedTransaction>
+ * Module 2: Analyze Architecture
+ * input: List<VirtualFile>
+ * output: ProjectArchitecture
  */
-export const runCategorizeTransactions = async (transactions: Transaction[]): Promise<CategorizedTransaction[]> => {
-  // We process them in a single batch for this demo
+export const runAnalyzeArchitecture = async (files: VirtualFile[]): Promise<ProjectArchitecture> => {
   const response = await ai.models.generateContent({
     model: modelId,
-    contents: `Categorize the following transactions: ${JSON.stringify(transactions)}`,
+    contents: `Analyze these virtual files to determine the project architecture: ${JSON.stringify(files)}`,
     config: {
-      systemInstruction: "Categorize each transaction into exactly one of: Food, Transport, Utilities, Entertainment, Other.",
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            transaction: {
-              type: Type.OBJECT,
-              properties: {
-                date: { type: Type.STRING },
-                description: { type: Type.STRING },
-                amount: { type: Type.NUMBER },
-                currency: { type: Type.STRING },
-              }
-            },
-            category: { 
-              type: Type.STRING, 
-              enum: ["Food", "Transport", "Utilities", "Entertainment", "Other"] 
-            },
-          },
-          required: ["transaction", "category"],
-        },
-      },
-    },
-  });
-
-  return JSON.parse(response.text || "[]");
-};
-
-/**
- * Module 3: Analyze Spending
- * input: List<CategorizedTransaction>
- * output: Insights
- */
-export const runAnalyzeSpending = async (categorized: CategorizedTransaction[]): Promise<Insights> => {
-  const response = await ai.models.generateContent({
-    model: modelId,
-    contents: `Analyze these categorized transactions: ${JSON.stringify(categorized)}`,
-    config: {
-      systemInstruction: "Calculate total spending per category and identify the largest category.",
+      systemInstruction: "Analyze the file hints. Extract dependencies (e.g., from package.json hints), state keys (from store hints), and the framework.",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          total_spending: { type: Type.NUMBER },
-          spending_per_category: { 
-            type: Type.OBJECT,
-            properties: {
-               Food: { type: Type.NUMBER },
-               Transport: { type: Type.NUMBER },
-               Utilities: { type: Type.NUMBER },
-               Entertainment: { type: Type.NUMBER },
-               Other: { type: Type.NUMBER },
-            }
+          dependencies: { 
+            type: Type.ARRAY,
+            items: { type: Type.STRING } 
           },
-          largest_category: { type: Type.STRING },
+          store_keys: { 
+            type: Type.ARRAY,
+            items: { type: Type.STRING } 
+          },
+          framework: { type: Type.STRING },
         },
-        required: ["total_spending", "spending_per_category", "largest_category"],
+        required: ["dependencies", "store_keys", "framework"],
       },
     },
   });
@@ -118,23 +73,24 @@ export const runAnalyzeSpending = async (categorized: CategorizedTransaction[]):
 };
 
 /**
- * Module 4: Generate Summary
- * input: Insights
- * output: SummaryText
+ * Module 3: Generate HAPF Spec
+ * input: ProjectArchitecture
+ * output: GeneratedSpec
  */
-export const runGenerateSummary = async (insights: Insights): Promise<SummaryText> => {
+export const runGenerateSpec = async (arch: ProjectArchitecture): Promise<GeneratedSpec> => {
   const response = await ai.models.generateContent({
     model: modelId,
-    contents: `Generate a summary for these financial insights: ${JSON.stringify(insights)}`,
+    contents: `Generate a HAPF v1.0 specification for a project with this architecture: ${JSON.stringify(arch)}.`,
     config: {
-      systemInstruction: "Generate a concise summary of the financial insights. Keep it under 100 words.",
+      systemInstruction: "Generate a valid HAPF v1.0 code block describing this architecture. Include modules for the main components.",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
         properties: {
-          text: { type: Type.STRING },
+          hapf_code: { type: Type.STRING },
+          description: { type: Type.STRING },
         },
-        required: ["text"],
+        required: ["hapf_code", "description"],
       },
     },
   });

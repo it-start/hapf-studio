@@ -1,96 +1,87 @@
 import React from 'react';
 
-export const INITIAL_HAPF_CODE = `package "finance-insight-generator" {
+export const INITIAL_HAPF_CODE = `package "hapf-web-studio-self-reflection" {
   version: "1.0.0"
-  doc: "Generates financial insights from transaction data."
+  doc: "Analyzes a synthetic project and generates a HAPF spec."
 }
 
-# --- Data Contract for Transactions ---
-type Transaction {
-  date: ISO8601
-  description: String
-  amount: Decimal
-  currency: String
+# --- Data Contract ---
+type VirtualFile {
+  path: String
+  intent: String
+  content_hint: String
 }
 
-# --- Module: Ingest CSV ---
-module "ingest.csv" {
-  input: "CSVData"
-  output: "List<Transaction>"
+type ProjectArchitecture {
+  dependencies: List<String>
+  store_keys: List<String>
+  framework: String
+}
+
+# --- Module: Ingest Virtual FS ---
+module "ingest.virtual_fs" {
+  input: "JSON_Config"
+  output: "List<VirtualFile>"
+  
+  ai.task: """
+    Parse the input JSON configuration simulating a file system.
+    Identify file intents and content hints.
+  """
+}
+
+# --- Module: Analyze Architecture ---
+module "analyze.architecture" {
+  input: "List<VirtualFile>"
+  output: "ProjectArchitecture"
 
   ai.task: """
-    Parse the CSV data and extract transactions. Ensure dates are ISO8601.
+    Analyze the virtual files. 
+    1. Extract dependencies from package.json hints.
+    2. Identify state keys from store files.
+    3. Determine the primary framework (e.g., React, Vue).
   """
-  validation: """
-    Each transaction must have a date, description, amount, and currency.
-  """
-  resources: { max_tokens: 2000 }
 }
 
-# --- Module: Categorize Transactions ---
-module "categorize.transactions" {
-  input: "List<Transaction>"
-  output: "List<CategorizedTransaction>"
+# --- Module: Generate HAPF Spec ---
+module "generate.spec" {
+  input: "ProjectArchitecture"
+  output: "HAPF_Code"
 
   ai.task: """
-    Categorize each transaction into one of the following categories: 
-    Food, Transport, Utilities, Entertainment, Other.
-  """
-  validation: """
-    Each transaction must have exactly one category.
+    Generate a valid HAPF v1.0 specification that describes the 
+    analyzed software architecture. Define Modules for the components found.
   """
 }
 
-type CategorizedTransaction {
-  transaction: Transaction
-  category: Enum["Food", "Transport", "Utilities", "Entertainment", "Other"]
-}
-
-# --- Module: Analyze Spending Patterns ---
-module "analyze.spending" {
-  input: "List<CategorizedTransaction>"
-  output: "Insights"
-
-  ai.task: """
-    Calculate total spending per category. Identify the largest spending categories.
-  """
-}
-
-type Insights {
-  total_spending: Decimal
-  spending_per_category: Map<String, Decimal>
-  largest_category: String
-}
-
-# --- Module: Generate Summary ---
-module "generate.summary" {
-  input: "Insights"
-  output: "SummaryText"
-
-  ai.task: """
-    Generate a concise summary of the financial insights. Keep it under 100 words.
-  """
-}
-
-type SummaryText {
-  text: String
-}
-
-# --- Pipeline: Financial Insight Generation ---
-pipeline "financial-insight" {
+# --- Pipeline: Reverse Engineer Repo ---
+pipeline "reverse_engineer_repo" {
   steps: [
-    ingest.csv → categorize.transactions → analyze.spending → generate.summary
+    ingest.virtual_fs → analyze.architecture → generate.spec
   ]
 }`;
 
-export const DEFAULT_INPUT_TEXT = `date,description,amount,currency
-2023-10-01,Uber Ride,25.50,USD
-2023-10-02,Grocery Store,120.00,USD
-2023-10-03,Netflix Subscription,15.99,USD
-2023-10-04,Electric Bill,85.20,USD
-2023-10-05,Coffee Shop,4.50,USD
-2023-10-06,Cinema Tickets,30.00,USD
-2023-10-07,Gas Station,45.00,USD
-2023-10-08,Restaurant Dinner,75.00,USD
-2023-10-09,Spotify,9.99,USD
-2023-10-10,Internet Bill,60.00,USD`;
+export const DEFAULT_INPUT_TEXT = `{
+  "input_source": "synthetic_archetype",
+  "virtual_files": [
+    {
+      "path": "package.json",
+      "intent": "Dependencies",
+      "content_hint": "deps: react, vite, bun, framer-motion; scripts: dev, build"
+    },
+    {
+      "path": "vite.config.ts",
+      "intent": "Build Config",
+      "content_hint": "plugins: [react()], proxy setup, alias: @ -> src"
+    },
+    {
+      "path": "src/store/hapfStore.ts",
+      "intent": "State Management",
+      "content_hint": "Store holding 'currentCode', 'logs', 'isRunning', 'artifacts'"
+    },
+    {
+      "path": "src/engine/RuntimeCore.ts",
+      "intent": "Business Logic",
+      "content_hint": "Function parseHapf(code) -> AST; Function executeStep(step)"
+    }
+  ]
+}`;

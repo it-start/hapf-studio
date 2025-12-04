@@ -1,6 +1,6 @@
 import React from 'react';
 import { PipelineStatus } from '../types';
-import { FileSpreadsheet, Tags, PieChart, FileText } from 'lucide-react';
+import { FileCode, Search, FileJson, Braces } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface PipelineVisualizerProps {
@@ -65,9 +65,8 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({ status }) => {
     const order = [
       PipelineStatus.IDLE,
       PipelineStatus.INGESTING,
-      PipelineStatus.CATEGORIZING,
       PipelineStatus.ANALYZING,
-      PipelineStatus.SUMMARIZING,
+      PipelineStatus.GENERATING,
       PipelineStatus.COMPLETE
     ];
     
@@ -91,35 +90,27 @@ const PipelineVisualizer: React.FC<PipelineVisualizerProps> = ({ status }) => {
       </div>
 
       <div className="flex items-center gap-2">
-        {/* Step 1: Ingest CSV */}
+        {/* Step 1: Ingest */}
         <Node 
-          icon={FileSpreadsheet} 
+          icon={FileCode} 
           label="INGEST" 
           {...getStatusState(PipelineStatus.INGESTING)} 
         />
         <Connector active={status === PipelineStatus.INGESTING} />
 
-        {/* Step 2: Categorize */}
+        {/* Step 2: Analyze */}
         <Node 
-          icon={Tags} 
-          label="CATEGORIZE" 
-          {...getStatusState(PipelineStatus.CATEGORIZING)} 
-        />
-        <Connector active={status === PipelineStatus.CATEGORIZING} />
-
-        {/* Step 3: Analyze */}
-        <Node 
-          icon={PieChart} 
+          icon={Search} 
           label="ANALYZE" 
           {...getStatusState(PipelineStatus.ANALYZING)} 
         />
         <Connector active={status === PipelineStatus.ANALYZING} />
 
-        {/* Step 4: Summary */}
+        {/* Step 3: Generate */}
         <Node 
-          icon={FileText} 
-          label="SUMMARY" 
-          {...getStatusState(PipelineStatus.SUMMARIZING)} 
+          icon={Braces} 
+          label="GEN SPEC" 
+          {...getStatusState(PipelineStatus.GENERATING)} 
         />
       </div>
     </div>

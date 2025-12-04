@@ -17,40 +17,33 @@ export interface LogEntry {
 export enum PipelineStatus {
   IDLE = 'IDLE',
   INGESTING = 'INGESTING',
-  CATEGORIZING = 'CATEGORIZING',
   ANALYZING = 'ANALYZING',
-  SUMMARIZING = 'SUMMARIZING',
+  GENERATING = 'GENERATING',
   COMPLETE = 'COMPLETE',
   FAILED = 'FAILED'
 }
 
-// --- Financial HAPF Data Structures ---
+// --- Self-Reflection HAPF Data Structures ---
 
-export interface Transaction {
-  date: string;
+export interface VirtualFile {
+  path: string;
+  intent: string;
+  content_hint: string;
+}
+
+export interface ProjectArchitecture {
+  dependencies: string[];
+  store_keys: string[];
+  framework: string;
+}
+
+export interface GeneratedSpec {
+  hapf_code: string;
   description: string;
-  amount: number;
-  currency: string;
-}
-
-export interface CategorizedTransaction {
-  transaction: Transaction;
-  category: string;
-}
-
-export interface Insights {
-  total_spending: number;
-  spending_per_category: Record<string, number>;
-  largest_category: string;
-}
-
-export interface SummaryText {
-  text: string;
 }
 
 export interface Artifacts {
-  transactions: Transaction[] | null;
-  categorized: CategorizedTransaction[] | null;
-  insights: Insights | null;
-  summary: SummaryText | null;
+  files: VirtualFile[] | null;
+  architecture: ProjectArchitecture | null;
+  spec: GeneratedSpec | null;
 }
