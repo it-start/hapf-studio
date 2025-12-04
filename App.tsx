@@ -7,7 +7,8 @@ import {
   Activity,
   Layers,
   Box,
-  FileJson
+  FileJson,
+  ChevronDown
 } from 'lucide-react';
 import { 
   LogLevel, 
@@ -15,7 +16,7 @@ import {
   PipelineStatus, 
   Artifacts 
 } from './types';
-import { INITIAL_HAPF_CODE, DEFAULT_INPUT_TEXT } from './constants';
+import { PIPELINE_EXAMPLES } from './constants';
 import * as geminiService from './services/geminiService';
 import Console from './components/Console';
 import PipelineVisualizer from './components/PipelineVisualizer';
@@ -35,7 +36,12 @@ function App() {
     spec: null
   });
   const [activeTab, setActiveTab] = useState<'visual' | 'artifacts' | 'metrics'>('visual');
-  const [inputText, setInputText] = useState(DEFAULT_INPUT_TEXT);
+  
+  // Example Selection State
+  const [selectedExampleKey, setSelectedExampleKey] = useState<string>("reverse-engineer");
+  const [editorCode, setEditorCode] = useState(PIPELINE_EXAMPLES["reverse-engineer"].code);
+  const [inputText, setInputText] = useState(PIPELINE_EXAMPLES["reverse-engineer"].input);
+  
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // --- Logging Helper ---
@@ -49,6 +55,19 @@ function App() {
     };
     setLogs(prev => [...prev, entry]);
   }, []);
+
+  // --- Example Switching ---
+  const handleExampleChange = (key: string) => {
+    if (PIPELINE_EXAMPLES[key]) {
+      setSelectedExampleKey(key);
+      setEditorCode(PIPELINE_EXAMPLES[key].code);
+      setInputText(PIPELINE_EXAMPLES[key].input);
+      // Reset pipeline state
+      setPipelineStatus(PipelineStatus.IDLE);
+      setLogs([]);
+      setArtifacts({ files: null, architecture: null, spec: null });
+    }
+  };
 
   // --- Pipeline Execution Logic ---
   const handleRun = useCallback(async () => {
@@ -105,6 +124,10 @@ function App() {
     setLogs([]);
     setArtifacts({ files: null, architecture: null, spec: null });
   };
+
+  const isRunDisabled = 
+    (pipelineStatus !== PipelineStatus.IDLE && pipelineStatus !== PipelineStatus.COMPLETE && pipelineStatus !== PipelineStatus.FAILED) ||
+    selectedExampleKey !== 'reverse-engineer';
 
   // --- Render Helpers ---
 
@@ -242,9 +265,10 @@ function App() {
              <div className="flex items-center gap-2 bg-black/30 rounded-lg p-1 border border-hapf-border">
                 <button 
                   onClick={handleRun}
-                  disabled={pipelineStatus !== PipelineStatus.IDLE && pipelineStatus !== PipelineStatus.COMPLETE && pipelineStatus !== PipelineStatus.FAILED}
+                  disabled={isRunDisabled}
+                  title={selectedExampleKey !== 'reverse-engineer' ? "Simulated execution is only available for the Reverse Engineer pipeline." : "Execute Pipeline"}
                   className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold transition-all ${
-                    pipelineStatus === PipelineStatus.IDLE || pipelineStatus === PipelineStatus.COMPLETE || pipelineStatus === PipelineStatus.FAILED
+                    !isRunDisabled
                     ? 'bg-hapf-primary text-white hover:bg-blue-600 shadow-lg shadow-blue-500/20' 
                     : 'bg-hapf-border text-hapf-muted cursor-not-allowed opacity-50'
                   }`}
@@ -270,13 +294,31 @@ function App() {
         <div className="w-1/2 flex flex-col border-r border-hapf-border">
             {/* Top: HAPF Code Editor */}
             <div className="flex-1 flex flex-col min-h-0">
-                <div className="h-8 bg-hapf-panel border-b border-hapf-border flex items-center px-4 gap-2 text-xs font-mono text-hapf-muted">
-                    <Code2 className="w-3 h-3"/>
-                    <span>reverse_engineer_repo.hapf</span>
-                    <span className="ml-auto opacity-50">Read-Only</span>
+                <div className="h-10 bg-hapf-panel border-b border-hapf-border flex items-center px-4 gap-2 text-xs font-mono text-hapf-muted justify-between">
+                    <div className="flex items-center gap-2">
+                      <Code2 className="w-3 h-3"/>
+                      <span>SOURCE:</span>
+                    </div>
+                    
+                    {/* Example Selector */}
+                    <div className="relative group">
+                      <select 
+                        value={selectedExampleKey}
+                        onChange={(e) => handleExampleChange(e.target.value)}
+                        className="bg-[#09090b] text-hapf-text border border-hapf-border rounded px-2 py-1 appearance-none pr-8 cursor-pointer focus:border-hapf-primary outline-none transition-colors hover:border-hapf-muted"
+                      >
+                        {Object.entries(PIPELINE_EXAMPLES).map(([key, example]) => (
+                          <option key={key} value={key}>{example.name}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="w-3 h-3 absolute right-2 top-1/2 -translate-y-1/2 text-hapf-muted pointer-events-none"/>
+                    </div>
                 </div>
-                <div className="flex-1 bg-[#0d0d10] overflow-hidden">
-                    <CodeBlock code={INITIAL_HAPF_CODE} />
+                <div className="flex-1 bg-[#0d0d10] overflow-hidden relative">
+                    <CodeBlock code={editorCode} />
+                    <div className="absolute top-2 right-4 text-[10px] text-hapf-muted opacity-50 pointer-events-none">
+                      READ-ONLY
+                    </div>
                 </div>
             </div>
 
@@ -284,13 +326,14 @@ function App() {
             <div className="h-1/3 border-t border-hapf-border flex flex-col bg-hapf-panel/50">
                 <div className="h-8 px-4 flex items-center border-b border-hapf-border text-xs font-mono text-hapf-muted">
                     <FileJson className="w-3 h-3 mr-2"/>
-                    <span>runtime_patch.conf (JSON)</span>
+                    <span>VIRTUAL INPUT (JSON)</span>
                 </div>
                 <textarea 
                     value={inputText}
                     onChange={(e) => setInputText(e.target.value)}
                     className="flex-1 bg-transparent p-4 text-sm font-mono text-hapf-text outline-none resize-none placeholder-hapf-muted/30"
                     placeholder="Enter JSON config here..."
+                    spellCheck={false}
                 />
             </div>
         </div>
@@ -325,7 +368,16 @@ function App() {
                  {activeTab === 'visual' && (
                      <div className="h-full flex flex-col">
                         <div className="h-1/2 min-h-[250px] border-b border-hapf-border">
-                            <PipelineVisualizer status={pipelineStatus} />
+                            {selectedExampleKey === 'reverse-engineer' ? (
+                                <PipelineVisualizer status={pipelineStatus} />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center p-8 bg-hapf-panel/30 text-hapf-muted text-xs font-mono text-center">
+                                    <div className="max-w-xs">
+                                        <Layers className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                                        Visualization not available for {PIPELINE_EXAMPLES[selectedExampleKey].name} in demo mode.
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         <div className="flex-1 min-h-0">
                             <Console logs={logs} />
