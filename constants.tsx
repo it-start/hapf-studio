@@ -88,6 +88,90 @@ pipeline "reverse_engineer_repo" {
   ]
 }`
   },
+  "self-heal": {
+    name: "Auto-Heal & Refactor",
+    code: `package "code-evolution-engine" {
+  version: "1.0.0"
+  doc: "System that monitors a repository, fixes bugs automatically, and improves code quality."
+}
+
+type Issue struct {
+  type: Enum["RuntimeError", "TestFailure", "CodeSmell"]
+  file_path: String
+  description: String
+}
+
+type Patch struct {
+  target_file: String
+  diff_content: String
+}
+
+# --- Module: Dr. House (Diagnostician) ---
+module "audit.diagnostician" {
+  contract: {
+    input: { source_code: Blob, logs: String? }
+    output: HealthReport
+  }
+  instructions: {
+    system_template: "Perform Root Cause Analysis. Identify bugs or anti-patterns."
+  }
+}
+
+# --- Module: The Strategist (Fixer) ---
+module "plan.treatment" {
+  contract: {
+    input: { source_code: Blob, issue: Issue }
+    output: Patch
+  }
+  instructions: {
+    system_template: "Fix the identified issue with minimal impact. Explain WHY."
+  }
+}
+
+# --- Module: The Auditor (Verifier) ---
+module "verify.test_runner" {
+  contract: {
+    input: { original_code: Blob, patch: Patch }
+    output: Bool
+  }
+  runtime: { tool: "shell_exec" }
+}
+
+# --- Pipeline: The Evolution Loop ---
+pipeline "auto_heal_loop" {
+  
+  # 1. Diagnose
+  let report = run audit.diagnostician({ 
+    source_code: input.content,
+    logs: io.read_logs() 
+  })
+  
+  # 2. Check health
+  if (report.issues.length == 0) {
+    return
+  }
+
+  # 3. Heal Loop
+  let critical_issue = report.issues[0]
+
+  # Generate Patch
+  let patch = run plan.treatment({
+    source_code: input.content,
+    issue: critical_issue
+  })
+
+  # Verify
+  let success = run verify.test_runner({
+    original_code: input.content,
+    patch: patch
+  })
+}`,
+    input: `{
+  "file": "math_lib.py",
+  "content": "def calc(a, b): return a / b",
+  "logs": "ZeroDivisionError: division by zero"
+}`
+  },
   "sentiment-analysis": {
     name: "Customer Sentiment",
     code: `package "customer-insights" {

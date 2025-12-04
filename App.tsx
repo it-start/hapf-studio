@@ -8,7 +8,8 @@ import {
   Layers,
   Box,
   FileJson,
-  ChevronDown
+  ChevronDown,
+  GitGraph
 } from 'lucide-react';
 import { 
   LogLevel, 
@@ -21,6 +22,7 @@ import * as geminiService from './services/geminiService';
 import Console from './components/Console';
 import PipelineVisualizer from './components/PipelineVisualizer';
 import CodeBlock from './components/CodeBlock';
+import HapfDiagram from './components/HapfDiagram';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 // Helper for generating IDs
@@ -35,7 +37,7 @@ function App() {
     architecture: null, 
     spec: null
   });
-  const [activeTab, setActiveTab] = useState<'visual' | 'artifacts' | 'metrics'>('visual');
+  const [activeTab, setActiveTab] = useState<'visual' | 'diagram' | 'artifacts' | 'metrics'>('visual');
   
   // Example Selection State
   const [selectedExampleKey, setSelectedExampleKey] = useState<string>("reverse-engineer");
@@ -77,7 +79,10 @@ function App() {
     setLogs([]);
     setArtifacts({ files: null, architecture: null, spec: null });
     setPipelineStatus(PipelineStatus.INGESTING);
-    setActiveTab('visual');
+    // Switch to visualizer on run, unless user is in diagram mode
+    if (activeTab !== 'diagram') {
+        setActiveTab('visual');
+    }
     
     addLog("Initializing HAPF Runtime v1.0...", LogLevel.SYSTEM);
     addLog(`Loading module "hapf-web-studio-self-reflection"`, LogLevel.SYSTEM);
@@ -117,7 +122,7 @@ function App() {
       addLog(`Pipeline crashed: ${error.message || "Unknown error"}`, LogLevel.ERROR, "SYSTEM");
       setPipelineStatus(PipelineStatus.FAILED);
     }
-  }, [inputText, pipelineStatus, addLog]);
+  }, [inputText, pipelineStatus, addLog, activeTab]);
 
   const handleReset = () => {
     setPipelineStatus(PipelineStatus.IDLE);
@@ -315,10 +320,12 @@ function App() {
                     </div>
                 </div>
                 <div className="flex-1 bg-[#0d0d10] overflow-hidden relative">
-                    <CodeBlock code={editorCode} />
-                    <div className="absolute top-2 right-4 text-[10px] text-hapf-muted opacity-50 pointer-events-none">
-                      READ-ONLY
-                    </div>
+                    <textarea 
+                        value={editorCode}
+                        onChange={(e) => setEditorCode(e.target.value)}
+                        className="w-full h-full bg-[#0d0d10] text-hapf-text font-mono text-sm p-4 outline-none resize-none leading-relaxed whitespace-pre"
+                        spellCheck={false}
+                    />
                 </div>
             </div>
 
@@ -347,7 +354,13 @@ function App() {
                     onClick={() => setActiveTab('visual')}
                     className={`px-4 py-2 text-xs font-bold border-b-2 transition-colors ${activeTab === 'visual' ? 'border-hapf-primary text-hapf-primary' : 'border-transparent text-hapf-muted hover:text-hapf-text'}`}
                 >
-                    VISUALIZER
+                    RUNTIME
+                </button>
+                <button 
+                    onClick={() => setActiveTab('diagram')}
+                    className={`px-4 py-2 text-xs font-bold border-b-2 transition-colors flex items-center gap-1 ${activeTab === 'diagram' ? 'border-hapf-warning text-hapf-warning' : 'border-transparent text-hapf-muted hover:text-hapf-text'}`}
+                >
+                    <GitGraph size={12} /> DIAGRAM
                 </button>
                 <button 
                     onClick={() => setActiveTab('artifacts')}
@@ -364,7 +377,7 @@ function App() {
             </div>
 
             {/* Content Area */}
-            <div className="flex-1 overflow-auto relative">
+            <div className="flex-1 overflow-auto relative bg-[#09090b]">
                  {activeTab === 'visual' && (
                      <div className="h-full flex flex-col">
                         <div className="h-1/2 min-h-[250px] border-b border-hapf-border">
@@ -382,6 +395,11 @@ function App() {
                         <div className="flex-1 min-h-0">
                             <Console logs={logs} />
                         </div>
+                     </div>
+                 )}
+                 {activeTab === 'diagram' && (
+                     <div className="h-full w-full">
+                         <HapfDiagram code={editorCode} />
                      </div>
                  )}
                  {activeTab === 'artifacts' && (
