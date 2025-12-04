@@ -2,90 +2,411 @@ import React from 'react';
 
 export const PIPELINE_EXAMPLES: Record<string, { name: string; code: string; input: string }> = {
   "reverse-engineer": {
-    name: "Reverse Engineer Repo",
-    code: `package "hapf-web-studio-self-reflection" {
+    name: "Legacy Lifter (Repo → HAPF)",
+    code: `package "legacy-lifter" {
   version: "1.0.0"
-  doc: "Analyzes a synthetic project and generates a HAPF spec."
-}
-
-# --- Data Contract ---
-type VirtualFile {
-  path: String
-  intent: String
-  content_hint: String
-}
-
-type ProjectArchitecture {
-  dependencies: List<String>
-  store_keys: List<String>
-  framework: String
-}
-
-# --- Module: Ingest Virtual FS ---
-module "ingest.virtual_fs" {
-  input: "JSON_Config"
-  output: "List<VirtualFile>"
+  standard: "HAPF-Core-v1.0"
+  doc: "Reverse-engineers codebases into declarative HAPF specs."
   
-  ai.task: """
-    Parse the input JSON configuration simulating a file system.
-    Identify file intents and content hints.
-  """
+  env: {
+    target_languages: ["python", "typescript", "go", "java"]
+    ignore_patterns: [".git", "node_modules", "__pycache__", "*.lock"]
+  }
 }
 
-# --- Module: Analyze Architecture ---
-module "analyze.architecture" {
-  input: "List<VirtualFile>"
-  output: "ProjectArchitecture"
-
-  ai.task: """
-    Analyze the virtual files. 
-    1. Extract dependencies from package.json hints.
-    2. Identify state keys from store files.
-    3. Determine the primary framework (e.g., React, Vue).
-  """
+# --- Meta-Model Types ---
+type SourceFile struct {
+  path: String
+  language: Enum["python", "js", "go", "other"]
+  content: Blob
 }
 
-# --- Module: Generate HAPF Spec ---
-module "generate.spec" {
-  input: "ProjectArchitecture"
-  output: "HAPF_Code"
-
-  ai.task: """
-    Generate a valid HAPF v1.0 specification that describes the 
-    analyzed software architecture. Define Modules for the components found.
-  """
+type DiscoveredModule struct {
+  suggested_name: String
+  intent_summary: String
+  inputs: List<DataField>
+  outputs: List<DataField>
+  dependencies: List<String>
+  complexity_score: Float
 }
 
-# --- Pipeline: Reverse Engineer Repo ---
+type SystemBlueprint struct {
+  modules: List<DiscoveredModule>
+  pipelines: List<String>
+  types: List<String>
+}
+
+# --- Module 1: Repo Scanner ---
+module "scan.git_walker" {
+  contract: {
+    input: String            # Path or Git URL
+    output: List<SourceFile> # Stream of files
+  }
+
+  runtime: {
+    strategy: "stream"       # Read one by one
+    batch_size: 1            # Granularity
+  }
+
+  instructions: {
+    system_template: "Traverse directory. Ignore binary/lock files. Pass source code."
+  }
+}
+
+# --- Module 2: Semantic Lifter ---
+module "analyze.semantic_lifter" {
+  contract: {
+    input: SourceFile
+    output: DiscoveredModule?
+  }
+
+  runtime: {
+    strategy: "map-reduce"   # Parallel analysis
+    temperature: 0.0         # Strict
+  }
+
+  instructions: {
+    system_template: "Analyze source code. Identify intent, inputs, outputs, and dependencies."
+  }
+}
+
+# --- Module 3: System Linker ---
+module "arch.linker" {
+  contract: {
+    input: List<DiscoveredModule>
+    output: SystemBlueprint
+  }
+
+  instructions: {
+    system_template: "Map dependencies. Create logical pipelines. Group related modules."
+  }
+}
+
+# --- Module 4: HAPF Generator ---
+module "codegen.hapf_writer" {
+  contract: {
+    input: SystemBlueprint
+    output: String
+  }
+
+  runtime: {
+    format: "text"
+  }
+
+  instructions: {
+    system_template: "Convert System Blueprint into valid HAPF v1.0 specification code."
+  }
+}
+
+# --- Pipeline ---
 pipeline "reverse_engineer_repo" {
-  steps: [
-    ingest.virtual_fs → analyze.architecture → generate.spec
-  ]
+  
+  # 1. Scan
+  let files = run scan.git_walker(input.repo_path)
+  
+  # 2. Analyze (Map)
+  let modules = run analyze.semantic_lifter(files)
+  
+  # 3. Link (Reduce)
+  let blueprint = run arch.linker(modules)
+  
+  # 4. Generate
+  let hapf_code = run codegen.hapf_writer(blueprint)
+  
+  io.write_file("reconstructed_spec.hapf", hapf_code)
 }`,
     input: `{
-  "input_source": "synthetic_archetype",
-  "virtual_files": [
-    {
-      "path": "package.json",
-      "intent": "Dependencies",
-      "content_hint": "deps: react, vite, bun, framer-motion; scripts: dev, build"
-    },
-    {
-      "path": "vite.config.ts",
-      "intent": "Build Config",
-      "content_hint": "plugins: [react()], proxy setup, alias: @ -> src"
-    },
-    {
-      "path": "src/store/hapfStore.ts",
-      "intent": "State Management",
-      "content_hint": "Store holding 'currentCode', 'logs', 'isRunning', 'artifacts'"
-    },
-    {
-      "path": "src/engine/RuntimeCore.ts",
-      "intent": "Business Logic",
-      "content_hint": "Function parseHapf(code) -> AST; Function executeStep(step)"
-    }
+  "repo_path": "./legacy-payment-system",
+  "files": [
+    { "path": "src/payment.py", "content": "def process(req): ..." },
+    { "path": "src/utils.py", "content": "def log(msg): ..." }
   ]
+}`
+  },
+  "biblionexus": {
+    name: "BiblioNexus (Complex Arch)",
+    code: `package "biblionexus-spec" {
+  version: "1.0.0"
+  standard: "HAPF-Core-v1.0"
+  doc: "Reconstructed HAPF specification for BiblioNexus project."
+  env: {
+    target_languages: ["python", "typescript", "go", "java"]
+    ignore_patterns: [".git", "node_modules", "__pycache__", "*.lock"]
+  }
+}
+
+type String String
+type Object Object
+type List_String List<String>
+type Map_String_String Map<String, String>
+type ReactNode Blob # Represents a React UI element
+type DOMElement Blob # Represents a DOM element for mounting
+
+module "config.ProjectConfiguration" {
+  contract: {
+    output: {
+      dependencies: List<String>
+      scripts: Map<String, String>
+    }
+  }
+  doc: "Manages project dependencies, scripts, and basic metadata. Integrates AI model clients and UI libraries."
+}
+
+module "config.TypeScriptConfiguration" {
+  contract: {
+    output: {
+      compilerOptions: Object
+    }
+  }
+  doc: "Defines TypeScript compiler options for strict type checking and module resolution."
+}
+
+module "config.ViteBuildConfiguration" {
+  contract: {
+    input: { mode: String }
+    output: { config: Object }
+  }
+  doc: "Configures the Vite development server and build process, including environment variable loading and React plugin integration."
+  dependencies: ["@vitejs/plugin-react", "react"]
+}
+
+module "app.RootApplication" {
+  contract: {
+    output: { ui_root: ReactNode }
+  }
+  doc: "The main application entry point, responsible for overall layout and potentially routing or state management."
+  dependencies: ["react", "ui.AnalysisDashboardComponent", "ui.ApologeticsPanelComponent", "ai.ChatBotComponent", "ai.ImageGeneratorComponent", "ui.ParallelsGuideComponent", "ui.PeerReviewPanelComponent", "ai.TheCouncilComponent"]
+}
+
+module "ui.AnalysisDashboardComponent" {
+  contract: {
+    input: { analysisData: Object }
+    output: { dashboardUI: ReactNode }
+  }
+  doc: "A core UI component displaying various analytical insights and integrating multiple visualization sub-components."
+  dependencies: ["react", "vis.BiblicalAlgorithmVisualization", "vis.BiblicalMapVisualization", "vis.BioGeneticAnalysisVisualization", "vis.ChronoMapVisualization", "vis.DistributionChartVisualization", "vis.EtymologicalPrismVisualization", "vis.NetworkGraphVisualization", "vis.PatternClusterVisualization", "vis.PropheticArcsVisualization", "vis.ScriptureDNAVisualization", "vis.ThemeChartVisualization", "vis.TimelineChartVisualization"]
+}
+
+module "ui.ApologeticsPanelComponent" {
+  contract: {
+    input: { theologicalData: Object }
+    output: { apologeticsUI: ReactNode }
+  }
+  doc: "Provides an interface for exploring apologetic arguments and theological discussions."
+  dependencies: ["react"]
+}
+
+module "ai.ChatBotComponent" {
+  contract: {
+    input: { query: String }
+    output: { chatUI: ReactNode, response: String }
+  }
+  doc: "Implements an interactive chatbot interface for user queries and AI responses."
+  dependencies: ["react", "@google/genai", "@mistralai/mistralai", "cohere-ai"]
+}
+
+module "ai.ImageGeneratorComponent" {
+  contract: {
+    input: { prompt: String }
+    output: { imageUI: ReactNode, imageUrl: String }
+  }
+  doc: "Facilitates generating images based on textual prompts using AI models."
+  dependencies: ["react", "@google/genai"]
+}
+
+module "ui.ParallelsGuideComponent" {
+  contract: {
+    input: { passageId: String }
+    output: { parallelsUI: ReactNode }
+  }
+  doc: "Displays parallel passages or thematic connections across different texts."
+  dependencies: ["react"]
+}
+
+module "ui.PeerReviewPanelComponent" {
+  contract: {
+    input: { reviewData: Object }
+    output: { reviewUI: ReactNode }
+  }
+  doc: "Allows users to submit or review analyses, fostering community collaboration."
+  dependencies: ["react"]
+}
+
+module "ai.TheCouncilComponent" {
+  contract: {
+    input: { discussionTopic: String }
+    output: { councilUI: ReactNode }
+  }
+  doc: "A discussion-oriented component, possibly for multi-agent AI debates or user collaboration."
+  dependencies: ["react", "@mistralai/mistralai"]
+}
+
+module "vis.BiblicalAlgorithmVisualization" {
+  contract: {
+    input: { algorithmData: Object }
+    output: { visualization: ReactNode }
+  }
+  doc: "Visualizes complex biblical algorithms or logical structures."
+  dependencies: ["react", "d3"]
+}
+
+module "vis.BiblicalMapVisualization" {
+  contract: {
+    input: { mapData: Object }
+    output: { visualization: ReactNode }
+  }
+  doc: "Renders geographical maps relevant to biblical events and locations."
+  dependencies: ["react", "leaflet"]
+}
+
+module "vis.BioGeneticAnalysisVisualization" {
+  contract: {
+    input: { geneticData: Object }
+    output: { visualization: ReactNode }
+  }
+  doc: "Visualizes bio-theological sequencing and genetic metaphors of scripture."
+  dependencies: ["react", "d3"]
+}
+
+module "vis.ChronoMapVisualization" {
+  contract: {
+    input: { timelineData: Object }
+    output: { visualization: ReactNode }
+  }
+  doc: "Visualizes chronological relationships and timelines of biblical events."
+  dependencies: ["react", "d3"]
+}
+
+module "vis.DistributionChartVisualization" {
+  contract: {
+    input: { chartData: Object }
+    output: { visualization: ReactNode }
+  }
+  doc: "Displays data distributions, such as word frequencies or thematic prevalence."
+  dependencies: ["react", "recharts"]
+}
+
+module "vis.EtymologicalPrismVisualization" {
+  contract: {
+    input: { wordData: Object }
+    output: { visualization: ReactNode }
+  }
+  doc: "Visualizes the etymological roots and semantic spectrum of words."
+  dependencies: ["react", "d3"]
+}
+
+module "vis.NetworkGraphVisualization" {
+  contract: {
+    input: { graphData: Object }
+    output: { visualization: ReactNode }
+  }
+  doc: "Renders network graphs showing connections between concepts, characters, or verses."
+  dependencies: ["react", "d3"]
+}
+
+module "vis.PatternClusterVisualization" {
+  contract: {
+    input: { clusterData: Object }
+    output: { visualization: ReactNode }
+  }
+  doc: "Identifies and visualizes recurring patterns or clusters in biblical texts."
+  dependencies: ["react", "d3"]
+}
+
+module "vis.PropheticArcsVisualization" {
+  contract: {
+    input: { prophecyData: Object }
+    output: { visualization: ReactNode }
+  }
+  doc: "Visualizes prophetic timelines and their fulfillment arcs."
+  dependencies: ["react", "d3"]
+}
+
+module "vis.ScriptureDNAVisualization" {
+  contract: {
+    input: { dnaData: Object }
+    output: { visualization: ReactNode }
+  }
+  doc: "Illustrates the 'genetic code' of scripture, representing core theological attributes."
+  dependencies: ["react", "d3"]
+}
+
+module "vis.ThemeChartVisualization" {
+  contract: {
+    input: { themeData: Object }
+    output: { visualization: ReactNode }
+  }
+  doc: "Charts the prevalence and evolution of themes across the biblical canon."
+  dependencies: ["react", "recharts"]
+}
+
+module "vis.TimelineChartVisualization" {
+  contract: {
+    input: { timelineEvents: Object }
+    output: { visualization: ReactNode }
+  }
+  doc: "Presents chronological timelines of events, persons, or books."
+  dependencies: ["react", "recharts"]
+}
+
+module "app.ApplicationEntryPoint" {
+  contract: {
+    output: { domMount: DOMElement }
+  }
+  doc: "The primary entry point for the client-side React application, responsible for mounting the root component."
+  dependencies: ["react-dom", "app.RootApplication"]
+}
+
+pipeline "ApplicationStartup" {
+  doc: "Initializes and renders the main application UI."
+  run app.ApplicationEntryPoint()
+}
+
+pipeline "DashboardRendering" {
+  doc: "Processes data and renders the analytical dashboard with various visualizations."
+  let analysisInput = input.analysis_data
+  run app.RootApplication()
+  run ui.AnalysisDashboardComponent(analysisInput)
+}
+
+pipeline "AI_Chat_Interaction" {
+  doc: "Handles user chat queries and returns AI-generated responses."
+  let userQuery = input.user_query
+  let chatResponse = run ai.ChatBotComponent(query: userQuery)
+  io.write_output(output_name: "chat_response", content: chatResponse.response)
+}
+
+pipeline "AI_Image_Generation" {
+  doc: "Takes a text prompt and generates an image using AI."
+  let imagePrompt = input.image_prompt
+  let imageUrl = run ai.ImageGeneratorComponent(prompt: imagePrompt)
+  io.write_output(output_name: "generated_image_url", content: imageUrl.imageUrl)
+}
+
+pipeline "Collaborative_Review_Process" {
+  doc: "Manages the submission and review of user-generated analyses."
+  let reviewData = input.review_submission
+  run ui.PeerReviewPanelComponent(reviewData: reviewData)
+}
+
+pipeline "Theological_Debate_Simulation" {
+  doc: "Orchestrates a multi-agent AI debate or user discussion on a theological topic."
+  let discussionTopic = input.topic
+  run ai.TheCouncilComponent(discussionTopic: discussionTopic)
+}`,
+    input: `{
+  "analysis_data": { 
+    "dataset": "Psalms", 
+    "metrics": ["sentiment", "density", "etymology"] 
+  },
+  "user_query": "Explain the concept of Logos in John 1.",
+  "image_prompt": "Moses parting the Red Sea, cinematic lighting, realistic style",
+  "review_submission": { 
+    "author": "User123", 
+    "content_id": "Analysis-99",
+    "comments": "Excellent visualization of the data."
+  },
+  "topic": "Free Will vs Predestination in Pauline Epistles"
 }`
   },
   "self-heal": {
@@ -134,7 +455,10 @@ module "verify.test_runner" {
     input: { original_code: Blob, patch: Patch }
     output: Bool
   }
-  runtime: { tool: "shell_exec" }
+  runtime: { 
+    tool: "shell_exec"
+    command: "apply_patch && run_tests" 
+  }
 }
 
 # --- Pipeline: The Evolution Loop ---

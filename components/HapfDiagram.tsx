@@ -15,6 +15,7 @@ import { Box, FileInput, Settings, Cpu } from 'lucide-react';
 
 interface HapfDiagramProps {
   code: string;
+  activeModule?: string | null;
 }
 
 // Custom Node Styling
@@ -28,6 +29,7 @@ const nodeStyle = {
   fontFamily: 'JetBrains Mono, monospace',
   minWidth: '150px',
   boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+  transition: 'all 0.3s ease'
 };
 
 const inputNodeStyle = {
@@ -51,7 +53,15 @@ const runtimeNodeStyle = {
   color: '#fbbf24'
 };
 
-const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
+const activeNodeStyle = {
+  ...moduleNodeStyle,
+  borderColor: '#10b981', // Success Green
+  boxShadow: '0 0 15px rgba(16, 185, 129, 0.4)',
+  transform: 'scale(1.05)',
+  zIndex: 9999
+};
+
+const HapfDiagram: React.FC<HapfDiagramProps> = ({ code, activeModule }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
@@ -178,19 +188,27 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
         nodeMap.set(moduleName, moduleId);
 
         // Check for Runtime Block inside Module
-        const runtimeIdx = blockContent.indexOf('runtime');
-        if (runtimeIdx !== -1) {
-            // Find ':' then '{'
+        // Robust check for whitespace/newline/tabs around 'runtime'
+        const runtimeRegex = /runtime\s*:/g;
+        const rtMatch = runtimeRegex.exec(blockContent);
+        
+        if (rtMatch) {
+            const runtimeIdx = rtMatch.index;
             const rtBlockStart = blockContent.indexOf('{', runtimeIdx);
+            
             if (rtBlockStart !== -1) {
                 const rtBlockEnd = findBlockEnd(blockContent, rtBlockStart);
                 if (rtBlockEnd !== -1) {
                     const rtContent = blockContent.substring(rtBlockStart + 1, rtBlockEnd);
                     
-                    // Parse simple key-values
+                    // Parse simple key-values, handling comments
                     const lines = rtContent.split('\n')
-                        .map(l => l.trim())
-                        .filter(l => l && !l.startsWith('#'))
+                        .map(l => {
+                            // Strip comments starting with #
+                            const commentIdx = l.indexOf('#');
+                            return commentIdx !== -1 ? l.substring(0, commentIdx).trim() : l.trim();
+                        })
+                        .filter(l => l.length > 0)
                         .map(l => l.replace(/["{},]/g, ''));
                     
                     const rtConfig = lines.slice(0, 3).map((l, i) => (
@@ -250,15 +268,17 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
         
         const pipelineContent = code.substring(blockStart + 1, blockEnd);
 
-        // 2a. Functional Syntax: let x = run mod(y)
-        const runStartRegex = /let\s+(\w+)\s*=\s*run\s+([\w\.]+)\s*\(/g;
+        // 2a. Functional Syntax: let x = run mod(y) OR run mod(y)
+        const runStatementRegex = /(?:let\s+(\w+)\s*=\s*)?run\s+([\w\.]+)\s*\(/g;
         let runMatch;
-        while ((runMatch = runStartRegex.exec(pipelineContent)) !== null) {
-            const [_, outputVar, moduleName] = runMatch;
+        while ((runMatch = runStatementRegex.exec(pipelineContent)) !== null) {
+            const [fullMatch, outputVar, moduleName] = runMatch;
             const moduleId = nodeMap.get(moduleName);
             
             if (moduleId) {
-                variableMap.set(outputVar, moduleId);
+                if (outputVar) {
+                    variableMap.set(outputVar, moduleId);
+                }
 
                 const startIndex = runMatch.index + runMatch[0].length;
                 const remainder = pipelineContent.substring(startIndex);
@@ -332,7 +352,6 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
             let sourceId = nodeMap.get(sourceName);
             let targetId = nodeMap.get(targetName);
 
-            // Infer source/target if missing
             if (!sourceId) {
                 sourceId = `inferred-${sourceName}`;
                 if (!newNodes.find(n => n.id === sourceId)) {
@@ -346,9 +365,7 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
                 }
             }
             if (!targetId) {
-                // Check if target is 'inferred' or defined later
                 targetId = `inferred-${targetName}`;
-                // Only create if we haven't seen this ID
                 if (!newNodes.find(n => n.id === targetId) && !nodeMap.has(targetName)) {
                      newNodes.push({
                         id: targetId,
@@ -386,9 +403,26 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
 
   }, [code, setNodes, setEdges]);
 
+  // Initial Parse
   useEffect(() => {
     parseHapf();
   }, [parseHapf]);
+
+  // Update styles on activeModule change
+  useEffect(() => {
+    setNodes((nds) => 
+      nds.map((node) => {
+        // Check if this node is the active module
+        // We construct ID as `mod-{activeModule}`
+        const isActive = activeModule && node.id === `mod-${activeModule}`;
+        
+        return {
+          ...node,
+          style: isActive ? activeNodeStyle : (node.type === 'runtime' ? runtimeNodeStyle : (node.id.startsWith('input-') ? inputNodeStyle : moduleNodeStyle)),
+        };
+      })
+    );
+  }, [activeModule, setNodes]);
 
   return (
     <div className="w-full h-full bg-[#09090b]">
@@ -411,9 +445,14 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code }) => {
             <div className="flex items-center gap-1 mb-1">
                 <Settings size={10} className="text-hapf-warning"/> Runtime
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 mb-1">
                 <FileInput size={10} className="text-hapf-accent"/> Input/Var
             </div>
+            {activeModule && (
+                <div className="mt-2 pt-2 border-t border-hapf-border text-hapf-success font-bold animate-pulse">
+                    EXECUTING: {activeModule}
+                </div>
+            )}
          </div>
        </ReactFlow>
     </div>

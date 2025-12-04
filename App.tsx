@@ -27,9 +27,8 @@ import { PIPELINE_EXAMPLES } from './constants';
 import * as geminiService from './services/geminiService';
 import * as githubService from './services/githubService';
 import Console from './components/Console';
-import PipelineVisualizer from './components/PipelineVisualizer';
-import CodeBlock from './components/CodeBlock';
 import HapfDiagram from './components/HapfDiagram';
+import CodeBlock from './components/CodeBlock';
 import { BarChart, XAxis, YAxis, Tooltip, ResponsiveContainer, Bar } from 'recharts';
 
 // Helper for generating IDs
@@ -46,6 +45,7 @@ function App() {
     genericOutput: null
   });
   const [activeTab, setActiveTab] = useState<'visual' | 'diagram' | 'artifacts' | 'metrics'>('visual');
+  const [activeModule, setActiveModule] = useState<string | null>(null);
   
   // Example Selection State
   const [selectedExampleKey, setSelectedExampleKey] = useState<string>("reverse-engineer");
@@ -81,6 +81,7 @@ function App() {
       setPipelineStatus(PipelineStatus.IDLE);
       setLogs([]);
       setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null });
+      setActiveModule(null);
     }
   };
 
@@ -91,9 +92,10 @@ function App() {
     // Reset state
     setLogs([]);
     setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null });
+    setActiveModule(null);
     
-    // Switch to visualizer on run, unless user is in diagram mode
-    if (activeTab !== 'diagram') {
+    // Switch to visualizer on run
+    if (activeTab !== 'visual') {
         setActiveTab('visual');
     }
     
@@ -101,81 +103,73 @@ function App() {
     addLog(`Loading module package...`, LogLevel.SYSTEM);
     
     try {
-      if (selectedExampleKey === 'reverse-engineer') {
-          // --- Specialized Execution for Reverse Engineer Demo ---
-          setPipelineStatus(PipelineStatus.INGESTING);
-          addLog(`Environment: gemini-2.5-flash | Context: ${useGithub ? 'Real GitHub Repo' : 'Simulated Synthetic Input'}`, LogLevel.SYSTEM);
+      setPipelineStatus(PipelineStatus.INGESTING);
+      let runtimeInput = inputText;
 
-          let files: any[] = [];
-
-          // --- STEP 1: INGEST (Virtual or Real) ---
-          addLog("Starting Module: ingest.virtual_fs", LogLevel.INFO, "INGEST");
-
-          if (useGithub && githubConfig.repoUrl) {
-             try {
-                 addLog(`Fetching metadata from ${githubConfig.repoUrl}...`, LogLevel.INFO, "GITHUB_API");
-                 files = await githubService.fetchGithubRepo(
-                     githubConfig.repoUrl, 
-                     githubConfig.token, 
-                     (msg) => addLog(msg, LogLevel.INFO, "GITHUB_API")
-                 );
-                 addLog(`Successfully indexed ${files.length} relevant files from repository.`, LogLevel.SUCCESS, "INGEST");
-             } catch (e: any) {
-                 throw new Error(`GitHub Error: ${e.message}`);
-             }
-          } else {
-             // Synthetic Ingest
-             files = await geminiService.runIngestFiles(inputText);
-             addLog(`Ingested ${files.length} virtual files from config.`, LogLevel.SUCCESS, "INGEST");
-          }
-
-          setArtifacts(prev => ({ ...prev, files }));
-          
-          // --- STEP 2: ANALYZE ARCHITECTURE ---
-          setPipelineStatus(PipelineStatus.ANALYZING);
-          addLog("Starting Module: analyze.architecture", LogLevel.INFO, "ANALYZE");
-          
-          const architecture = await geminiService.runAnalyzeArchitecture(files);
-          setArtifacts(prev => ({ ...prev, architecture }));
-          addLog(`Detected Framework: ${architecture.framework}`, LogLevel.SUCCESS, "ANALYZE");
-          addLog(`Found ${architecture.dependencies.length} dependencies and ${architecture.store_keys.length} state keys.`, LogLevel.INFO, "ANALYZE");
-          
-          // --- STEP 3: GENERATE SPEC ---
-          setPipelineStatus(PipelineStatus.GENERATING);
-          addLog("Starting Module: generate.spec", LogLevel.INFO, "GENERATE");
-          
-          const spec = await geminiService.runGenerateSpec(architecture);
-          setArtifacts(prev => ({ ...prev, spec }));
-          addLog("HAPF Specification generated successfully.", LogLevel.SUCCESS, "GENERATE");
-          setPipelineStatus(PipelineStatus.COMPLETE);
-
-      } else {
-          // --- Generic Simulation for Other Pipelines ---
-          setPipelineStatus(PipelineStatus.ANALYZING);
-          addLog("Starting Generic Pipeline Simulation...", LogLevel.SYSTEM);
-          
-          const result = await geminiService.runGenericPipelineSimulation(editorCode, inputText);
-          
-          // Replay simulated logs
-          result.logs.forEach(msg => addLog(msg, LogLevel.INFO, "RUNTIME"));
-          
-          setArtifacts(prev => ({ ...prev, genericOutput: result.output }));
-          addLog("Simulation completed successfully.", LogLevel.SUCCESS, "SYSTEM");
-          
-          setPipelineStatus(PipelineStatus.COMPLETE);
+      // --- OPTIONAL: GITHUB INGESTION ---
+      if (useGithub && githubConfig.repoUrl) {
+         try {
+             addLog(`Connecting to GitHub: ${githubConfig.repoUrl}...`, LogLevel.INFO, "GITHUB_CONNECTOR");
+             const files = await githubService.fetchGithubRepo(
+                 githubConfig.repoUrl, 
+                 githubConfig.token, 
+                 (msg) => addLog(msg, LogLevel.INFO, "GITHUB_API")
+             );
+             addLog(`Fetched ${files.length} files from repository.`, LogLevel.SUCCESS, "INGEST");
+             
+             // Inject GitHub data as the input for the simulation
+             runtimeInput = JSON.stringify({
+                 repo_path: githubConfig.repoUrl,
+                 files: files.map(f => ({ path: f.path, content_preview: f.content_hint }))
+             }, null, 2);
+             
+             setArtifacts(prev => ({ ...prev, files }));
+         } catch (e: any) {
+             throw new Error(`GitHub Error: ${e.message}`);
+         }
       }
+
+      // --- GENERIC PIPELINE SIMULATION ---
+      setPipelineStatus(PipelineStatus.ANALYZING);
+      addLog("Starting Pipeline Execution Simulation...", LogLevel.SYSTEM);
+      
+      const result = await geminiService.runGenericPipelineSimulation(editorCode, runtimeInput);
+      
+      setPipelineStatus(PipelineStatus.GENERATING); // Using 'Generating' as 'Running'
+
+      // Replay steps with animation
+      const steps = result.steps || [];
+      
+      for (const step of steps) {
+          // Highlight module in Visualizer
+          setActiveModule(step.module);
+          
+          // Add Log
+          const preview = step.data_preview ? ` [Data: ${step.data_preview}]` : '';
+          addLog(`${step.message}${preview}`, LogLevel.INFO, step.module);
+          
+          // Delay for visual effect (800ms)
+          await new Promise(r => setTimeout(r, 800));
+      }
+      
+      setActiveModule(null);
+      setArtifacts(prev => ({ ...prev, genericOutput: result.output }));
+      addLog("Execution completed successfully.", LogLevel.SUCCESS, "SYSTEM");
+      
+      setPipelineStatus(PipelineStatus.COMPLETE);
 
     } catch (error: any) {
       console.error(error);
       addLog(`Pipeline crashed: ${error.message || "Unknown error"}`, LogLevel.ERROR, "SYSTEM");
       setPipelineStatus(PipelineStatus.FAILED);
     }
-  }, [inputText, pipelineStatus, addLog, activeTab, useGithub, githubConfig, selectedExampleKey, editorCode]);
+  }, [inputText, pipelineStatus, addLog, activeTab, useGithub, githubConfig, editorCode]);
 
   const handleReset = () => {
     setPipelineStatus(PipelineStatus.IDLE);
     setLogs([]);
     setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null });
+    setActiveModule(null);
   };
 
   const isRunDisabled = pipelineStatus !== PipelineStatus.IDLE && pipelineStatus !== PipelineStatus.COMPLETE && pipelineStatus !== PipelineStatus.FAILED;
@@ -199,41 +193,9 @@ function App() {
           </div>
         )}
 
-        {artifacts.architecture && (
-            <div className="bg-hapf-panel border border-hapf-primary/30 rounded p-4">
-                 <h3 className="text-hapf-primary font-bold mb-4 flex items-center gap-2"><Layers size={16}/> Architecture Analysis</h3>
-                 
-                 <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <h4 className="text-xs text-hapf-muted uppercase mb-2">Dependencies</h4>
-                        <div className="flex flex-wrap gap-2">
-                            {artifacts.architecture.dependencies.map(d => (
-                                <span key={d} className="px-2 py-1 bg-hapf-primary/10 text-hapf-primary rounded text-xs border border-hapf-primary/20">{d}</span>
-                            ))}
-                        </div>
-                    </div>
-                    <div>
-                        <h4 className="text-xs text-hapf-muted uppercase mb-2">State Keys (Store)</h4>
-                        <div className="flex flex-wrap gap-2">
-                            {artifacts.architecture.store_keys.map(k => (
-                                <span key={k} className="px-2 py-1 bg-hapf-accent/10 text-hapf-accent rounded text-xs border border-hapf-accent/20">{k}</span>
-                            ))}
-                        </div>
-                    </div>
-                 </div>
-
-                 <div className="mt-4 pt-4 border-t border-hapf-border">
-                     <div className="flex justify-between items-center">
-                         <span className="text-hapf-muted">Detected Framework</span>
-                         <span className="font-bold text-white bg-hapf-border px-2 py-1 rounded">{artifacts.architecture.framework}</span>
-                     </div>
-                 </div>
-            </div>
-        )}
-
         {artifacts.files && (
           <div className="bg-hapf-panel border border-hapf-accent/30 rounded p-4">
-             <h3 className="text-hapf-accent font-bold mb-2 flex items-center gap-2"><Box size={16}/> Ingested Files</h3>
+             <h3 className="text-hapf-accent font-bold mb-2 flex items-center gap-2"><Box size={16}/> Ingested Files (Live)</h3>
              <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
                     <thead>
@@ -394,19 +356,17 @@ function App() {
         </div>
 
         <div className="flex items-center gap-4">
-             {selectedExampleKey === 'reverse-engineer' && (
-                 <button 
-                    onClick={() => setShowGithubModal(true)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold border transition-colors ${
-                        useGithub 
-                        ? 'bg-hapf-panel border-hapf-success text-hapf-success' 
-                        : 'bg-transparent border-hapf-border text-hapf-muted hover:text-white hover:border-hapf-text'
-                    }`}
-                 >
-                    <Github className="w-3 h-3" />
-                    {useGithub ? 'GIT CONNECTED' : 'CONNECT GITHUB'}
-                 </button>
-             )}
+             <button 
+                onClick={() => setShowGithubModal(true)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded text-xs font-bold border transition-colors ${
+                    useGithub 
+                    ? 'bg-hapf-panel border-hapf-success text-hapf-success' 
+                    : 'bg-transparent border-hapf-border text-hapf-muted hover:text-white hover:border-hapf-text'
+                }`}
+             >
+                <Github className="w-3 h-3" />
+                {useGithub ? 'GIT CONNECTED' : 'CONNECT GITHUB'}
+             </button>
 
              <div className="flex items-center gap-2 bg-black/30 rounded-lg p-1 border border-hapf-border">
                 <button 
@@ -532,24 +492,17 @@ function App() {
             <div className="flex-1 overflow-auto relative bg-[#09090b]">
                  {activeTab === 'visual' && (
                      <div className="h-full flex flex-col">
-                        <div className="h-1/2 min-h-[250px] border-b border-hapf-border">
-                            {selectedExampleKey === 'reverse-engineer' ? (
-                                <PipelineVisualizer status={pipelineStatus} />
-                            ) : (
-                                <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-hapf-panel/30 text-hapf-muted text-xs font-mono text-center">
-                                    {pipelineStatus !== PipelineStatus.IDLE ? (
-                                        <>
-                                            <Cpu className="w-8 h-8 mx-auto mb-4 animate-pulse text-hapf-primary" />
-                                            <p className="text-hapf-primary font-bold mb-1">RUNNING SIMULATION...</p>
-                                            <p className="opacity-70">Executing HAPF pipeline logic via Gemini Engine.</p>
-                                        </>
-                                    ) : (
-                                        <div className="max-w-xs">
-                                            <Layers className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                                            Visual pipeline tracking available for standard demos.<br/>
-                                            For this example, check Logs and Artifacts.
-                                        </div>
-                                    )}
+                        <div className="h-1/2 min-h-[250px] border-b border-hapf-border relative">
+                            {/* LIVE Runtime Visualizer using HapfDiagram */}
+                            <HapfDiagram code={editorCode} activeModule={activeModule} />
+                            
+                            {/* Overlay if not running */}
+                            {pipelineStatus === PipelineStatus.IDLE && (
+                                <div className="absolute inset-0 bg-black/60 flex items-center justify-center pointer-events-none">
+                                    <div className="bg-hapf-panel/90 border border-hapf-border p-4 rounded text-center backdrop-blur-sm">
+                                        <Play className="w-8 h-8 mx-auto mb-2 text-hapf-primary"/>
+                                        <p className="text-hapf-text font-bold text-xs">READY TO START</p>
+                                    </div>
                                 </div>
                             )}
                         </div>

@@ -98,11 +98,22 @@ export const runGenerateSpec = async (arch: ProjectArchitecture): Promise<Genera
   return JSON.parse(response.text || "{}");
 };
 
+export interface SimulationStep {
+  module: string;
+  message: string;
+  data_preview?: string;
+}
+
+export interface SimulationResult {
+  steps: SimulationStep[];
+  output: any;
+}
+
 /**
  * Generic Pipeline Simulator
  * Simulates execution of ANY HAPF code based on input.
  */
-export const runGenericPipelineSimulation = async (hapfCode: string, inputData: string): Promise<{ logs: string[], output: any }> => {
+export const runGenericPipelineSimulation = async (hapfCode: string, inputData: string): Promise<SimulationResult> => {
   const response = await ai.models.generateContent({
     model: modelId,
     contents: `
@@ -122,12 +133,14 @@ export const runGenericPipelineSimulation = async (hapfCode: string, inputData: 
       3. If there are conditional branches (if/else), evaluate them based on your simulated data.
       
       Return a JSON object with:
-      - logs: An array of strings describing what happened (e.g., "Module 'scan' processed 5 items", "Condition X met").
+      - steps: An array of execution steps representing the timeline. Each step must have:
+          - module: The EXACT name of the module being executed (e.g. "scan.git_walker"). If it's a system action (like "return" or "io.write"), use "SYSTEM".
+          - message: A log message describing what happened.
+          - data_preview: (Optional) A short string representation of the data flowing out of this step (e.g. "5 files found", "Score: 0.8").
       - output: The final result object of the pipeline.`,
       responseMimeType: "application/json",
-      // NOTE: We do not use responseSchema here because 'output' is dynamic and Type.OBJECT requires properties to be defined.
     }
   });
 
-  return JSON.parse(response.text || '{"logs": [], "output": {}}');
+  return JSON.parse(response.text || '{"steps": [], "output": {}}');
 };
