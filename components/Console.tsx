@@ -1,14 +1,27 @@
+
 import React, { useEffect, useRef } from 'react';
 import { LogEntry, LogLevel, AIProvider } from '../types';
-import { Terminal, CheckCircle2, AlertCircle, Info, Hash, BrainCircuit, Cloud, Wind, Hexagon } from 'lucide-react';
+import { Terminal, CheckCircle2, AlertCircle, Info, Hash, BrainCircuit, Cloud, Wind, Hexagon, Shield, Wifi, Server } from 'lucide-react';
 
 interface ConsoleProps {
   logs: LogEntry[];
 }
 
-const LogIcon = ({ level, isThought }: { level: LogLevel, isThought: boolean }) => {
+const LogIcon = ({ level, isThought, message }: { level: LogLevel, isThought: boolean, message: string }) => {
   if (isThought) return <BrainCircuit className="w-3 h-3 text-hapf-muted/70 mt-0.5" />;
   
+  // Heuristic for Edge/Security Icons
+  const lowerMsg = message.toLowerCase();
+  if (lowerMsg.includes('[sec]') || lowerMsg.includes('mtls') || lowerMsg.includes('cert')) {
+      return <Shield className="w-3 h-3 text-hapf-success mt-0.5" />;
+  }
+  if (lowerMsg.includes('[edge]') || lowerMsg.includes('cache')) {
+      return <Server className="w-3 h-3 text-orange-400 mt-0.5" />;
+  }
+  if (lowerMsg.includes('[net]') || lowerMsg.includes('handshake')) {
+      return <Wifi className="w-3 h-3 text-blue-400 mt-0.5" />;
+  }
+
   switch (level) {
     case LogLevel.SUCCESS: return <CheckCircle2 className="w-3 h-3 text-hapf-success mt-0.5" />;
     case LogLevel.ERROR: return <AlertCircle className="w-3 h-3 text-hapf-error mt-0.5" />;
@@ -67,7 +80,7 @@ const Console: React.FC<ConsoleProps> = ({ logs }) => {
             <div key={log.id} className={`flex gap-3 group hover:bg-white/5 p-1 rounded transition-colors ${isThought ? 'opacity-70' : ''}`}>
               <span className="text-hapf-muted opacity-50 select-none w-16 shrink-0">{log.timestamp}</span>
               <div className="shrink-0 pt-0.5">
-                 <LogIcon level={log.level} isThought={isThought} />
+                 <LogIcon level={log.level} isThought={isThought} message={displayMessage} />
               </div>
               <div className="flex flex-col gap-1 w-full min-w-0">
                   <div className="flex items-center">

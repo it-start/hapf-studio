@@ -227,8 +227,86 @@ const INPUT_LEGAL_AUDIT = {
   policy_version: "2025-Q1"
 };
 
+// ============================================================================
+// EDGE COMPUTING (Distributed)
+// ============================================================================
+const CODE_EDGE_COMPUTE = `
+package "edge-fleet-ops" {
+  version: "3.0.0"
+  doc: "Distributed edge computing pipeline with local caching and mTLS security."
+  env: {
+    type: "distributed-edge"
+    security: "mtls-enforced"
+  }
+}
+
+type TelemetryData struct {
+  sensor_id: String
+  temp_c: Float
+  vibration_hz: Float
+  timestamp: Int
+}
+
+module "edge.sensor_ingest" {
+  contract: {
+    input: Stream<TelemetryData>
+    output: TelemetryData
+  }
+  runtime: {
+    locality: "edge-node"
+    strategy: "real-time"
+  }
+}
+
+module "edge.local_filter" {
+  contract: {
+    input: TelemetryData
+    output: TelemetryData?
+  }
+  runtime: {
+    locality: "edge-node"
+    cache: "lru-100mb"
+  }
+  instructions: {
+    system_template: "Filter out noise. If vibration < 0.5Hz, discard. Cache recent anomalies locally."
+  }
+}
+
+module "cloud.aggregator" {
+  contract: {
+    input: List<TelemetryData>
+    output: Bool
+  }
+  runtime: {
+    locality: "cloud-region-us-east"
+    security: {
+      protocol: "mtls"
+      cert_rotation: "24h"
+    }
+  }
+}
+
+pipeline "iot_edge_sync" {
+  let stream = run edge.sensor_ingest(input.device_id)
+  
+  # Local Edge Processing (Low Latency)
+  let clean_data = run edge.local_filter(stream)
+  
+  if (clean_data != null) {
+    # Secure Sync to Cloud
+    run cloud.aggregator([clean_data])
+  }
+}
+`;
+
+const INPUT_EDGE_COMPUTE = {
+  device_id: "turbine-x99-sector-7",
+  sample_rate_ms: 50
+};
+
 export const INTEGRATION_EXAMPLES = {
   "n8n-integration": defineSpec("n8n Integration (Webhook)", CODE_N8N, INPUT_N8N),
   "sentiment-analysis": defineSpec("Customer Sentiment", CODE_SENTIMENT, INPUT_SENTIMENT),
   "legal-audit": defineSpec("Legal Contract Audit", CODE_LEGAL_AUDIT, INPUT_LEGAL_AUDIT),
+  "edge-compute": defineSpec("Distributed Edge Compute", CODE_EDGE_COMPUTE, INPUT_EDGE_COMPUTE),
 };
