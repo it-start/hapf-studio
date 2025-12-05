@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Artifacts } from '../types';
-import { FileText, Box, Image as ImageIcon, ChevronRight, ChevronDown, Table, Sparkles, Cpu, Package, HardDrive, FileCode, Download } from 'lucide-react';
+import { FileText, Box, Image as ImageIcon, ChevronRight, ChevronDown, Table, Sparkles, Cpu, Package, HardDrive, FileCode, Download, Workflow, Share2 } from 'lucide-react';
 import CodeBlock from './CodeBlock';
 import { motion } from 'framer-motion';
 
@@ -231,6 +231,72 @@ const BundleExplorer = ({ data }: { data: any }) => {
     );
 };
 
+// --- Sub-component: N8n Workflow Viewer ---
+const N8nWorkflowViewer = ({ data }: { data: any }) => {
+    if (!data || !data.nodes) return null;
+
+    const handleDownload = () => {
+        const filename = `workflow-${data.name.replace(/\s+/g, '-').toLowerCase()}.json`;
+        const jsonStr = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    return (
+        <div className="bg-hapf-panel border border-hapf-accent/30 rounded-xl overflow-hidden shadow-xl shadow-black/20">
+           <div className="bg-gradient-to-r from-hapf-accent/10 to-transparent px-5 py-3 border-b border-hapf-accent/20 flex justify-between items-center">
+               <h3 className="text-hapf-accent font-bold flex items-center gap-2">
+                   <Workflow size={16}/> Generated n8n Workflow
+               </h3>
+               <span className="text-[10px] bg-hapf-accent/10 px-2 py-0.5 rounded border border-hapf-accent/20 font-bold">
+                   {data.nodes.length} Nodes
+               </span>
+           </div>
+           
+           <div className="p-5">
+               <div className="flex items-center gap-4 mb-6">
+                   <div className="w-12 h-12 bg-[#ff6d5a]/20 rounded-lg flex items-center justify-center">
+                       <Workflow size={24} className="text-[#ff6d5a]" />
+                   </div>
+                   <div>
+                       <div className="font-bold text-sm text-hapf-text">Workflow Ready for Import</div>
+                       <p className="text-xs text-hapf-muted">This JSON file can be imported directly into your n8n instance.</p>
+                   </div>
+                   <button 
+                        onClick={handleDownload}
+                        className="ml-auto bg-[#ff6d5a] hover:bg-[#e05e4d] text-white px-4 py-2 rounded font-bold text-xs flex items-center gap-2 transition-colors shadow-lg shadow-[#ff6d5a]/20"
+                   >
+                       <Download size={14} /> DOWNLOAD JSON
+                   </button>
+               </div>
+
+               {/* Node List Preview */}
+               <div className="bg-black/30 rounded-lg border border-hapf-border overflow-hidden">
+                   <div className="px-4 py-2 text-[10px] text-hapf-muted uppercase font-bold border-b border-hapf-border">Node Map</div>
+                   <div className="divide-y divide-hapf-border/30">
+                       {data.nodes.map((node: any, i: number) => (
+                           <div key={i} className="px-4 py-2 flex items-center justify-between hover:bg-white/5 transition-colors">
+                               <div className="flex items-center gap-2">
+                                   <div className={`w-2 h-2 rounded-full ${node.type.includes('webhook') ? 'bg-green-500' : 'bg-blue-500'}`} />
+                                   <span className="text-xs font-mono text-hapf-text">{node.name}</span>
+                               </div>
+                               <span className="text-[10px] text-hapf-muted font-mono">{node.type}</span>
+                           </div>
+                       ))}
+                   </div>
+               </div>
+           </div>
+        </div>
+    );
+};
+
 // --- Sub-component: Smart Value Renderer ---
 const SmartValueRenderer = ({ name, value }: { name: string, value: any }) => {
     // 0. Quantum/Ether Art Check
@@ -276,7 +342,7 @@ const SmartValueRenderer = ({ name, value }: { name: string, value: any }) => {
 };
 
 const ArtifactViewer: React.FC<{ artifacts: Artifacts }> = ({ artifacts }) => {
-  const hasContent = artifacts.files || artifacts.spec || artifacts.genericOutput;
+  const hasContent = artifacts.files || artifacts.spec || artifacts.genericOutput || artifacts.n8n_workflow;
 
   if (!hasContent) {
       return (
@@ -291,6 +357,11 @@ const ArtifactViewer: React.FC<{ artifacts: Artifacts }> = ({ artifacts }) => {
   return (
     <div className="space-y-8 p-6 font-mono text-sm pb-20">
       
+      {/* 0. N8n Workflow Viewer */}
+      {artifacts.n8n_workflow && (
+          <N8nWorkflowViewer data={artifacts.n8n_workflow} />
+      )}
+
       {/* 1. HAPF Spec (Reverse Engineering) */}
       {artifacts.spec && (
         <div className="bg-hapf-panel border border-hapf-success/30 rounded-xl overflow-hidden shadow-xl shadow-black/20">

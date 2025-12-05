@@ -15,7 +15,8 @@ import {
   Settings,
   Cpu,
   Zap,
-  Key
+  Key,
+  Workflow
 } from 'lucide-react';
 import { 
   LogLevel, 
@@ -24,7 +25,8 @@ import {
   Artifacts,
   GithubConfig,
   ProviderConfig,
-  AIProvider
+  AIProvider,
+  N8nConfig
 } from './types';
 import { PIPELINE_EXAMPLES } from './constants';
 import * as geminiService from './services/geminiService';
@@ -46,7 +48,8 @@ function App() {
     files: null, 
     architecture: null, 
     spec: null,
-    genericOutput: null
+    genericOutput: null,
+    n8n_workflow: null
   });
   const [activeTab, setActiveTab] = useState<'visual' | 'diagram' | 'artifacts' | 'metrics'>('visual');
   const [activeModule, setActiveModule] = useState<string | null>(null);
@@ -61,8 +64,13 @@ function App() {
   const [useGithub, setUseGithub] = useState(false);
   const [githubConfig, setGithubConfig] = useState<GithubConfig>({ repoUrl: '', token: '' });
 
+  // N8n State
+  const [n8nConfig, setN8nConfig] = useState<N8nConfig>({ instanceUrl: 'https://your-n8n.com', apiKey: '' });
+
   // AI Provider State
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'models' | 'integrations'>('models');
+  
   const [providers, setProviders] = useState<Record<AIProvider, ProviderConfig>>({
     [AIProvider.GOOGLE]: { provider: AIProvider.GOOGLE, enabled: true, defaultModel: 'gemini-2.5-flash', apiKey: 'env-var-managed' },
     [AIProvider.MISTRAL]: { provider: AIProvider.MISTRAL, enabled: false, defaultModel: 'mistral-large', apiKey: '' },
@@ -94,7 +102,7 @@ function App() {
       // Reset pipeline state
       setPipelineStatus(PipelineStatus.IDLE);
       setLogs([]);
-      setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null });
+      setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null, n8n_workflow: null });
       setActiveModule(null);
     }
   };
@@ -105,7 +113,7 @@ function App() {
     
     // Reset state
     setLogs([]);
-    setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null });
+    setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null, n8n_workflow: null });
     setActiveModule(null);
     
     // Switch to visualizer on run
@@ -183,6 +191,16 @@ function App() {
       
       setActiveModule(null);
       setArtifacts(prev => ({ ...prev, genericOutput: result.output }));
+      
+      // --- N8N COMPILATION TRIGGER ---
+      // If this is the n8n example, run the compiler service in parallel/after
+      if (selectedExampleKey === 'n8n-integration') {
+          addLog("Compiling pipeline to n8n Workflow...", LogLevel.SYSTEM, "COMPILER");
+          const n8nWorkflow = await geminiService.runCompileToN8n(editorCode, n8nConfig.instanceUrl);
+          setArtifacts(prev => ({ ...prev, n8n_workflow: n8nWorkflow }));
+          addLog("Compilation complete! n8n JSON generated.", LogLevel.SUCCESS, "COMPILER");
+      }
+
       addLog("Execution completed successfully.", LogLevel.SUCCESS, "SYSTEM");
       
       setPipelineStatus(PipelineStatus.COMPLETE);
@@ -192,12 +210,12 @@ function App() {
       addLog(`Pipeline crashed: ${error.message || "Unknown error"}`, LogLevel.ERROR, "SYSTEM");
       setPipelineStatus(PipelineStatus.FAILED);
     }
-  }, [inputText, pipelineStatus, addLog, activeTab, useGithub, githubConfig, editorCode, providers]);
+  }, [inputText, pipelineStatus, addLog, activeTab, useGithub, githubConfig, editorCode, providers, selectedExampleKey, n8nConfig]);
 
   const handleReset = () => {
     setPipelineStatus(PipelineStatus.IDLE);
     setLogs([]);
-    setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null });
+    setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null, n8n_workflow: null });
     setActiveModule(null);
   };
 
@@ -263,103 +281,154 @@ function App() {
       {/* Settings Modal */}
       {showSettingsModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-            <div className="bg-hapf-panel border border-hapf-border w-[600px] rounded-lg shadow-2xl p-6">
-                 <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-lg font-bold flex items-center gap-2"><Cpu /> Model Registry</h2>
+            <div className="bg-hapf-panel border border-hapf-border w-[600px] rounded-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                 <div className="p-6 border-b border-hapf-border bg-black/20 flex justify-between items-center">
+                    <h2 className="text-lg font-bold flex items-center gap-2"><Settings size={18} /> Studio Settings</h2>
                     <button onClick={() => setShowSettingsModal(false)} className="text-hapf-muted hover:text-white"><X size={20}/></button>
                 </div>
-                <p className="text-xs text-hapf-muted mb-4">Configure available AI providers for the HAPF Runtime execution.</p>
-                
-                <div className="space-y-3">
-                    {/* Google */}
-                    <div className="border border-hapf-border rounded-lg p-4 bg-black/30 flex items-center justify-between">
-                         <div className="flex items-center gap-3">
-                             <div className="w-10 h-10 rounded bg-blue-500/20 flex items-center justify-center text-blue-500 font-bold">G</div>
-                             <div>
-                                 <div className="font-bold text-sm">Google Gemini</div>
-                                 <div className="text-xs text-hapf-muted">gemini-2.5-flash (Default)</div>
-                             </div>
-                         </div>
-                         <div className="flex items-center gap-2">
-                             <span className="text-[10px] text-green-500 font-bold bg-green-500/10 px-2 py-1 rounded">CONNECTED</span>
-                         </div>
-                    </div>
 
-                    {/* Mistral */}
-                    <div className={`border rounded-lg p-4 bg-black/30 transition-colors ${providers[AIProvider.MISTRAL].enabled ? 'border-orange-500/50' : 'border-hapf-border'}`}>
-                         <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className={`w-10 h-10 rounded flex items-center justify-center font-bold transition-colors ${providers[AIProvider.MISTRAL].enabled ? 'bg-orange-500/20 text-orange-500' : 'bg-hapf-border text-hapf-muted'}`}>M</div>
-                                <div>
-                                    <div className="font-bold text-sm">Mistral AI</div>
-                                    <div className="text-xs text-hapf-muted">mistral-large, mixtral-8x7b</div>
-                                </div>
-                            </div>
-                            <button 
-                                onClick={() => toggleProvider(AIProvider.MISTRAL)}
-                                className={`px-3 py-1.5 text-xs font-bold rounded border transition-all ${providers[AIProvider.MISTRAL].enabled ? 'bg-orange-500 text-white border-orange-600' : 'bg-transparent border-hapf-border hover:bg-white/5'}`}
-                            >
-                                {providers[AIProvider.MISTRAL].enabled ? 'ENABLED' : 'ENABLE'}
-                            </button>
-                         </div>
-                         {/* API Key Input */}
-                         {providers[AIProvider.MISTRAL].enabled && (
-                             <div className="mt-3 pt-3 border-t border-white/5 flex items-center gap-2 animate-in slide-in-from-top-2">
-                                 <Key size={14} className="text-orange-500" />
-                                 <input 
-                                    type="password"
-                                    placeholder="Enter Mistral API Key (sk-...)"
-                                    className="flex-1 bg-black/40 border border-hapf-border rounded px-2 py-1 text-xs text-hapf-text outline-none focus:border-orange-500 transition-colors placeholder:text-hapf-muted/30"
-                                    value={providers[AIProvider.MISTRAL].apiKey || ''}
-                                    onChange={(e) => updateProviderKey(AIProvider.MISTRAL, e.target.value)}
-                                 />
-                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${providers[AIProvider.MISTRAL].apiKey ? 'text-green-400 bg-green-500/10' : 'text-hapf-muted bg-white/5'}`}>
-                                     {providers[AIProvider.MISTRAL].apiKey ? 'PROD MODE' : 'SIMULATOR'}
-                                 </span>
-                             </div>
-                         )}
-                    </div>
-
-                    {/* Cohere */}
-                    <div className={`border rounded-lg p-4 bg-black/30 transition-colors ${providers[AIProvider.COHERE].enabled ? 'border-teal-500/50' : 'border-hapf-border'}`}>
-                         <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className={`w-10 h-10 rounded flex items-center justify-center font-bold transition-colors ${providers[AIProvider.COHERE].enabled ? 'bg-teal-500/20 text-teal-500' : 'bg-hapf-border text-hapf-muted'}`}>C</div>
-                                <div>
-                                    <div className="font-bold text-sm">Cohere</div>
-                                    <div className="text-xs text-hapf-muted">command-r-plus</div>
-                                </div>
-                            </div>
-                            <button 
-                                onClick={() => toggleProvider(AIProvider.COHERE)}
-                                className={`px-3 py-1.5 text-xs font-bold rounded border transition-all ${providers[AIProvider.COHERE].enabled ? 'bg-teal-500 text-white border-teal-600' : 'bg-transparent border-hapf-border hover:bg-white/5'}`}
-                            >
-                                {providers[AIProvider.COHERE].enabled ? 'ENABLED' : 'ENABLE'}
-                            </button>
-                         </div>
-                         {/* API Key Input */}
-                         {providers[AIProvider.COHERE].enabled && (
-                             <div className="mt-3 pt-3 border-t border-white/5 flex items-center gap-2 animate-in slide-in-from-top-2">
-                                 <Key size={14} className="text-teal-500" />
-                                 <input 
-                                    type="password"
-                                    placeholder="Enter Cohere API Key (production)"
-                                    className="flex-1 bg-black/40 border border-hapf-border rounded px-2 py-1 text-xs text-hapf-text outline-none focus:border-teal-500 transition-colors placeholder:text-hapf-muted/30"
-                                    value={providers[AIProvider.COHERE].apiKey || ''}
-                                    onChange={(e) => updateProviderKey(AIProvider.COHERE, e.target.value)}
-                                 />
-                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${providers[AIProvider.COHERE].apiKey ? 'text-green-400 bg-green-500/10' : 'text-hapf-muted bg-white/5'}`}>
-                                     {providers[AIProvider.COHERE].apiKey ? 'PROD MODE' : 'SIMULATOR'}
-                                 </span>
-                             </div>
-                         )}
-                    </div>
+                <div className="flex border-b border-hapf-border bg-black/40">
+                    <button 
+                        onClick={() => setActiveSettingsTab('models')}
+                        className={`px-6 py-3 text-xs font-bold transition-colors border-b-2 ${activeSettingsTab === 'models' ? 'border-hapf-primary text-hapf-primary bg-white/5' : 'border-transparent text-hapf-muted hover:text-white'}`}
+                    >
+                        MODEL REGISTRY
+                    </button>
+                    <button 
+                         onClick={() => setActiveSettingsTab('integrations')}
+                         className={`px-6 py-3 text-xs font-bold transition-colors border-b-2 ${activeSettingsTab === 'integrations' ? 'border-hapf-accent text-hapf-accent bg-white/5' : 'border-transparent text-hapf-muted hover:text-white'}`}
+                    >
+                        INTEGRATIONS
+                    </button>
                 </div>
+                
+                <div className="p-6 overflow-y-auto flex-1">
+                    {/* MODEL REGISTRY TAB */}
+                    {activeSettingsTab === 'models' && (
+                        <div className="space-y-3">
+                            {/* Google */}
+                            <div className="border border-hapf-border rounded-lg p-4 bg-black/30 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded bg-blue-500/20 flex items-center justify-center text-blue-500 font-bold">G</div>
+                                    <div>
+                                        <div className="font-bold text-sm">Google Gemini</div>
+                                        <div className="text-xs text-hapf-muted">gemini-2.5-flash (Default)</div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-green-500 font-bold bg-green-500/10 px-2 py-1 rounded">CONNECTED</span>
+                                </div>
+                            </div>
 
-                <div className="mt-6 pt-4 border-t border-hapf-border text-center">
-                    <p className="text-[10px] text-hapf-muted">
-                        Enter API Keys to enable <b>Production Mode</b>. The Runtime will attempt to execute real requests or perform high-fidelity simulations of provider-specific behavior using the provided credentials.
-                    </p>
+                            {/* Mistral */}
+                            <div className={`border rounded-lg p-4 bg-black/30 transition-colors ${providers[AIProvider.MISTRAL].enabled ? 'border-orange-500/50' : 'border-hapf-border'}`}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-10 h-10 rounded flex items-center justify-center font-bold transition-colors ${providers[AIProvider.MISTRAL].enabled ? 'bg-orange-500/20 text-orange-500' : 'bg-hapf-border text-hapf-muted'}`}>M</div>
+                                        <div>
+                                            <div className="font-bold text-sm">Mistral AI</div>
+                                            <div className="text-xs text-hapf-muted">mistral-large, mixtral-8x7b</div>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => toggleProvider(AIProvider.MISTRAL)}
+                                        className={`px-3 py-1.5 text-xs font-bold rounded border transition-all ${providers[AIProvider.MISTRAL].enabled ? 'bg-orange-500 text-white border-orange-600' : 'bg-transparent border-hapf-border hover:bg-white/5'}`}
+                                    >
+                                        {providers[AIProvider.MISTRAL].enabled ? 'ENABLED' : 'ENABLE'}
+                                    </button>
+                                </div>
+                                {/* API Key Input */}
+                                {providers[AIProvider.MISTRAL].enabled && (
+                                    <div className="mt-3 pt-3 border-t border-white/5 flex items-center gap-2 animate-in slide-in-from-top-2">
+                                        <Key size={14} className="text-orange-500" />
+                                        <input 
+                                            type="password"
+                                            placeholder="Enter Mistral API Key (sk-...)"
+                                            className="flex-1 bg-black/40 border border-hapf-border rounded px-2 py-1 text-xs text-hapf-text outline-none focus:border-orange-500 transition-colors placeholder:text-hapf-muted/30"
+                                            value={providers[AIProvider.MISTRAL].apiKey || ''}
+                                            onChange={(e) => updateProviderKey(AIProvider.MISTRAL, e.target.value)}
+                                        />
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${providers[AIProvider.MISTRAL].apiKey ? 'text-green-400 bg-green-500/10' : 'text-hapf-muted bg-white/5'}`}>
+                                            {providers[AIProvider.MISTRAL].apiKey ? 'PROD MODE' : 'SIMULATOR'}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Cohere */}
+                            <div className={`border rounded-lg p-4 bg-black/30 transition-colors ${providers[AIProvider.COHERE].enabled ? 'border-teal-500/50' : 'border-hapf-border'}`}>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-10 h-10 rounded flex items-center justify-center font-bold transition-colors ${providers[AIProvider.COHERE].enabled ? 'bg-teal-500/20 text-teal-500' : 'bg-hapf-border text-hapf-muted'}`}>C</div>
+                                        <div>
+                                            <div className="font-bold text-sm">Cohere</div>
+                                            <div className="text-xs text-hapf-muted">command-r-plus</div>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => toggleProvider(AIProvider.COHERE)}
+                                        className={`px-3 py-1.5 text-xs font-bold rounded border transition-all ${providers[AIProvider.COHERE].enabled ? 'bg-teal-500 text-white border-teal-600' : 'bg-transparent border-hapf-border hover:bg-white/5'}`}
+                                    >
+                                        {providers[AIProvider.COHERE].enabled ? 'ENABLED' : 'ENABLE'}
+                                    </button>
+                                </div>
+                                {/* API Key Input */}
+                                {providers[AIProvider.COHERE].enabled && (
+                                    <div className="mt-3 pt-3 border-t border-white/5 flex items-center gap-2 animate-in slide-in-from-top-2">
+                                        <Key size={14} className="text-teal-500" />
+                                        <input 
+                                            type="password"
+                                            placeholder="Enter Cohere API Key (production)"
+                                            className="flex-1 bg-black/40 border border-hapf-border rounded px-2 py-1 text-xs text-hapf-text outline-none focus:border-teal-500 transition-colors placeholder:text-hapf-muted/30"
+                                            value={providers[AIProvider.COHERE].apiKey || ''}
+                                            onChange={(e) => updateProviderKey(AIProvider.COHERE, e.target.value)}
+                                        />
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${providers[AIProvider.COHERE].apiKey ? 'text-green-400 bg-green-500/10' : 'text-hapf-muted bg-white/5'}`}>
+                                            {providers[AIProvider.COHERE].apiKey ? 'PROD MODE' : 'SIMULATOR'}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* INTEGRATIONS TAB */}
+                    {activeSettingsTab === 'integrations' && (
+                        <div className="space-y-4">
+                            <div className="border border-hapf-accent/30 rounded-lg p-4 bg-hapf-accent/5">
+                                <div className="flex items-center gap-3 mb-4">
+                                     <Workflow className="text-hapf-accent w-8 h-8"/>
+                                     <div>
+                                         <div className="font-bold text-sm">n8n (Self-Hosted)</div>
+                                         <div className="text-xs text-hapf-muted">Configure compilation target for n8n workflows.</div>
+                                     </div>
+                                </div>
+                                
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-hapf-muted uppercase mb-1">Instance URL</label>
+                                        <input 
+                                            type="text" 
+                                            placeholder="https://n8n.your-domain.com"
+                                            className="w-full bg-black/40 border border-hapf-border rounded px-3 py-2 text-xs font-mono outline-none focus:border-hapf-accent"
+                                            value={n8nConfig.instanceUrl}
+                                            onChange={(e) => setN8nConfig({...n8nConfig, instanceUrl: e.target.value})}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-hapf-muted uppercase mb-1">API Key (Optional)</label>
+                                        <input 
+                                            type="password" 
+                                            placeholder="n8n_api_key_..."
+                                            className="w-full bg-black/40 border border-hapf-border rounded px-3 py-2 text-xs font-mono outline-none focus:border-hapf-accent"
+                                            value={n8nConfig.apiKey}
+                                            onChange={(e) => setN8nConfig({...n8nConfig, apiKey: e.target.value})}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
           </div>
@@ -457,7 +526,7 @@ function App() {
              <button 
                 onClick={() => setShowSettingsModal(true)}
                 className="p-2 hover:bg-hapf-border rounded-full text-hapf-muted hover:text-white transition-colors"
-                title="Model Registry Settings"
+                title="Model Registry & Integrations"
              >
                  <Settings size={18} />
              </button>

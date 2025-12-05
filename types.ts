@@ -50,17 +50,29 @@ export interface GeneratedSpec {
   description: string;
 }
 
+export interface N8nWorkflowData {
+  nodes: any[];
+  connections: any;
+  name: string;
+}
+
 export interface Artifacts {
   files: VirtualFile[] | null;
   architecture: ProjectArchitecture | null;
   spec: GeneratedSpec | null;
   // Generic output for other pipeline examples
   genericOutput: any | null;
+  n8n_workflow: N8nWorkflowData | null;
 }
 
 export interface GithubConfig {
   repoUrl: string;
   token?: string; // Optional PAT
+}
+
+export interface N8nConfig {
+  instanceUrl: string;
+  apiKey?: string;
 }
 
 export interface ProviderConfig {

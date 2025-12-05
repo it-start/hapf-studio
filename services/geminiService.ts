@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { VirtualFile, ProjectArchitecture, GeneratedSpec, ProviderConfig, AIProvider } from "../types";
+import { VirtualFile, ProjectArchitecture, GeneratedSpec, ProviderConfig, AIProvider, N8nWorkflowData } from "../types";
 
 // NOTE: process.env.API_KEY is assumed to be available as per instructions.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -171,4 +171,41 @@ export const runGenericPipelineSimulation = async (
   });
 
   return JSON.parse(response.text || '{"steps": [], "output": {}}');
+};
+
+/**
+ * HAPF to n8n Compiler
+ * Transpiles HAPF code into an n8n JSON Workflow
+ */
+export const runCompileToN8n = async (hapfCode: string, instanceUrl: string): Promise<N8nWorkflowData> => {
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: `Compile this HAPF code into an n8n Workflow JSON structure.
+    
+    HAPF CODE:
+    ${hapfCode}
+    
+    Target Instance URL: ${instanceUrl || "http://localhost:5678"}
+    `,
+    config: {
+      systemInstruction: `You are a HAPF to n8n Compiler.
+      Convert the logic, modules, and flow of the HAPF code into a valid n8n JSON workflow object (containing 'nodes' and 'connections').
+      
+      Mapping Rules:
+      1. 'input.webhook' or 'input.stream' -> Start Node: 'n8n-nodes-base.webhook' (POST).
+      2. 'run module()' -> 
+         - If runtime.tool is 'slack', use 'n8n-nodes-base.slack'.
+         - If runtime.tool is 'http', use 'n8n-nodes-base.httpRequest'.
+         - If module is AI, use a placeholder 'n8n-nodes-base.code' with comments describing the AI call, OR 'n8n-nodes-base.openAi' if obvious.
+         - Default: 'n8n-nodes-base.code' (JavaScript).
+      3. 'if/else' -> 'n8n-nodes-base.if'.
+      
+      Output ONLY the JSON object with keys: "nodes", "connections", "name".
+      `,
+      responseMimeType: "application/json",
+      // We cannot use a strict schema for n8n nodes as they vary wildly, so we rely on the prompt + JSON mime type.
+    }
+  });
+
+  return JSON.parse(response.text || '{"nodes": [], "connections": {}, "name": "Untitled Workflow"}');
 };

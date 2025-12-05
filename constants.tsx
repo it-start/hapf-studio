@@ -123,6 +123,99 @@ pipeline "reverse_engineer_repo" {
   ]
 }`
   },
+  "n8n-integration": {
+    name: "n8n Integration (Webhook)",
+    code: `package "n8n-automation" {
+  version: "1.0.0"
+  doc: "A HAPF workflow designed to be compiled into an n8n JSON workflow."
+}
+
+# --- Data Types ---
+type WebhookPayload struct {
+  user_email: String
+  message: String
+  timestamp: Int
+}
+
+type SentimentResult struct {
+  score: Float
+  label: Enum["POSITIVE", "NEGATIVE", "NEUTRAL"]
+}
+
+# --- Modules ---
+
+module "ai.sentiment_analysis" {
+  contract: {
+    input: String
+    output: SentimentResult
+  }
+  # This module will be compiled to an n8n 'AI Agent' or 'HTTP Request' node
+  runtime: { 
+    tool: "n8n_ai_agent"
+    model: "gemini-pro"
+  }
+  instructions: {
+    system_template: "Analyze the sentiment of the input text."
+  }
+}
+
+module "slack.notify" {
+  contract: {
+    input: { channel: String, text: String }
+    output: Bool
+  }
+  # This maps to the n8n 'Slack' node
+  runtime: { tool: "n8n_slack" }
+}
+
+module "crm.add_note" {
+  contract: {
+    input: { email: String, note: String }
+    output: Bool
+  }
+  runtime: { tool: "n8n_http_request" }
+}
+
+# --- Main Workflow ---
+pipeline "customer_feedback_handler" {
+  
+  # 1. Trigger: Webhook
+  # In n8n, this becomes the Start Node (Webhook)
+  let payload = input.webhook_json
+  
+  # 2. Process: AI Analysis
+  let sentiment = run ai.sentiment_analysis(payload.message)
+  
+  # 3. Logic: Branching
+  if (sentiment.score < -0.5) {
+    # Negative Feedback -> Alert Team
+    run slack.notify({
+      channel: "#customer-alerts",
+      text: "🚨 Negative Feedback from " + payload.user_email + ": " + payload.message
+    })
+    
+    # Add note to CRM
+    run crm.add_note({
+      email: payload.user_email,
+      note: "Urgent: Customer reported negative experience."
+    })
+    
+  } else {
+    # Positive/Neutral -> Just log
+    run slack.notify({
+      channel: "#feedback-feed",
+      text: "ℹ️ New feedback: " + payload.message
+    })
+  }
+}`,
+    input: `{
+  "webhook_json": {
+    "user_email": "alice@example.com",
+    "message": "I am extremely frustrated with the downtime!",
+    "timestamp": 1715431200
+  }
+}`
+  },
   "dev-agent": {
     name: "Autonomous Dev Agent (AI)",
     code: `package "autonomous-developer" {
