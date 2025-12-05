@@ -1,3 +1,4 @@
+
 export enum LogLevel {
   INFO = 'INFO',
   WARN = 'WARN',
@@ -80,4 +81,30 @@ export interface ProviderConfig {
   enabled: boolean;
   apiKey?: string;
   defaultModel: string;
+}
+
+export interface SimulationStep {
+  module: string;
+  message: string;
+  data_preview?: string;
+}
+
+export interface TokenUsage {
+  promptTokenCount: number;
+  candidatesTokenCount: number;
+  totalTokenCount: number;
+}
+
+export interface SimulationResult {
+  steps: SimulationStep[];
+  output: any;
+  usage?: TokenUsage;
+}
+
+export interface RunMetrics {
+  totalLatencyMs: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  estimatedCost: number;
 }

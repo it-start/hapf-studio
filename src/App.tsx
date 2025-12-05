@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useRef } from 'react';
 import { 
   Play, 
@@ -29,9 +28,11 @@ import {
   GithubConfig,
   ProviderConfig,
   AIProvider,
-  N8nConfig
+  N8nConfig,
+  RunMetrics,
+  SimulationStep
 } from './types';
-import { PIPELINE_EXAMPLES } from './examples';
+import { PIPELINE_EXAMPLES } from './constants';
 import * as geminiService from './services/geminiService';
 import * as githubService from './services/githubService';
 import Console from './components/Console';
@@ -57,6 +58,10 @@ function App() {
   const [activeTab, setActiveTab] = useState<'visual' | 'diagram' | 'artifacts' | 'metrics'>('visual');
   const [activeModule, setActiveModule] = useState<string | null>(null);
   
+  // Metrics State
+  const [runMetrics, setRunMetrics] = useState<RunMetrics | null>(null);
+  const [stepsForMetrics, setStepsForMetrics] = useState<SimulationStep[]>([]);
+
   // Example Selection State
   const [selectedExampleKey, setSelectedExampleKey] = useState<string>("reverse-engineer");
   const [editorCode, setEditorCode] = useState(PIPELINE_EXAMPLES["reverse-engineer"].code);
@@ -107,6 +112,8 @@ function App() {
       setLogs([]);
       setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null, n8n_workflow: null });
       setActiveModule(null);
+      setRunMetrics(null);
+      setStepsForMetrics([]);
     }
   };
 
@@ -130,6 +137,8 @@ function App() {
     setLogs([]);
     setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null, n8n_workflow: null });
     setActiveModule(null);
+    setRunMetrics(null);
+    setStepsForMetrics([]);
     
     // Switch to visualizer on run
     if (activeTab !== 'visual') {
@@ -175,8 +184,30 @@ function App() {
       setPipelineStatus(PipelineStatus.ANALYZING);
       addLog("Starting Multi-Model Pipeline Execution...", LogLevel.SYSTEM);
       
+      const startTime = performance.now();
       const result = await geminiService.runGenericPipelineSimulation(editorCode, runtimeInput, providers);
+      const endTime = performance.now();
+
+      // Capture Metrics
+      const latency = Math.round(endTime - startTime);
+      const promptTokens = result.usage?.promptTokenCount || 0;
+      const completionTokens = result.usage?.candidatesTokenCount || 0;
+      const totalTokens = result.usage?.totalTokenCount || 0;
       
+      // Cost Calculation (Using approx Gemini 2.5 Flash pricing - similar to 1.5 Flash)
+      // Input: $0.075 / 1M tokens, Output: $0.30 / 1M tokens
+      const cost = ((promptTokens * 0.075) + (completionTokens * 0.30)) / 1000000;
+      
+      setRunMetrics({
+          totalLatencyMs: latency,
+          promptTokens,
+          completionTokens,
+          totalTokens,
+          estimatedCost: cost
+      });
+
+      setStepsForMetrics(result.steps || []);
+
       setPipelineStatus(PipelineStatus.GENERATING); // Using 'Generating' as 'Running'
 
       // Replay steps with animation
@@ -232,6 +263,8 @@ function App() {
     setLogs([]);
     setArtifacts({ files: null, architecture: null, spec: null, genericOutput: null, n8n_workflow: null });
     setActiveModule(null);
+    setRunMetrics(null);
+    setStepsForMetrics([]);
   };
 
   const isRunDisabled = pipelineStatus !== PipelineStatus.IDLE && pipelineStatus !== PipelineStatus.COMPLETE && pipelineStatus !== PipelineStatus.FAILED;
@@ -239,38 +272,87 @@ function App() {
   // --- Render Helpers ---
 
   const renderMetrics = () => {
-     const data = [
-        { name: 'Ingest', latency: useGithub ? 1200 : 450, cost: useGithub ? 0.0 : 0.002 },
-        { name: 'Analyze', latency: 2100, cost: 0.015 },
-        { name: 'Generate', latency: 3200, cost: 0.025 },
-     ];
+     if (!runMetrics) {
+         return (
+             <div className="flex flex-col items-center justify-center h-full text-hapf-muted opacity-40 select-none">
+                <Activity size={64} strokeWidth={0.5} />
+                <p className="mt-4 text-sm font-mono">No telemetry available.</p>
+                <p className="text-xs">Run a pipeline to generate metrics.</p>
+            </div>
+         );
+     }
+
+     // Generate chart data based on step output length (proxy for complexity/tokens per step)
+     const chartData = stepsForMetrics.map(step => ({
+         name: step.module.replace('mod-', '').replace('runtime.', '').split('.').pop(), // Short name
+         complexity: step.message.length + (step.data_preview?.length || 0),
+         fullModule: step.module
+     }));
 
      return (
-        <div className="p-4 h-full flex flex-col">
-            <h3 className="text-hapf-text font-bold mb-4 flex items-center gap-2"><Activity size={16}/> Runtime Telemetry</h3>
-            <div className="flex-1 min-h-[200px]">
+        <div className="p-4 h-full flex flex-col overflow-y-auto">
+            <h3 className="text-hapf-text font-bold mb-4 flex items-center gap-2">
+                <Activity size={16}/> 
+                Runtime Telemetry
+                <span className="text-[10px] bg-hapf-primary/10 text-hapf-primary px-2 py-0.5 rounded border border-hapf-primary/20">LIVE DATA</span>
+            </h3>
+            
+            {/* Top Cards */}
+            <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="bg-hapf-panel p-4 rounded border border-hapf-border relative overflow-hidden group">
+                    <div className="text-xs text-hapf-muted uppercase font-bold z-10 relative">Total Latency</div>
+                    <div className="text-2xl font-bold text-white mt-1 z-10 relative font-mono">{runMetrics.totalLatencyMs.toLocaleString()} ms</div>
+                    <Activity className="absolute -right-2 -bottom-2 w-16 h-16 text-hapf-primary/10 group-hover:text-hapf-primary/20 transition-colors" />
+                </div>
+                <div className="bg-hapf-panel p-4 rounded border border-hapf-border relative overflow-hidden group">
+                    <div className="text-xs text-hapf-muted uppercase font-bold z-10 relative">Est. Cost</div>
+                    <div className="text-2xl font-bold text-hapf-success mt-1 z-10 relative font-mono">${runMetrics.estimatedCost.toFixed(6)}</div>
+                    <div className="text-[10px] text-hapf-muted mt-1 z-10 relative opacity-60">Based on Flash pricing</div>
+                    <Zap className="absolute -right-2 -bottom-2 w-16 h-16 text-hapf-success/10 group-hover:text-hapf-success/20 transition-colors" />
+                </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 mb-6 text-center">
+                 <div className="bg-black/30 p-2 rounded border border-hapf-border">
+                     <div className="text-[10px] text-hapf-muted uppercase">Prompt Tokens</div>
+                     <div className="text-sm font-bold text-hapf-primary font-mono">{runMetrics.promptTokens.toLocaleString()}</div>
+                 </div>
+                 <div className="bg-black/30 p-2 rounded border border-hapf-border">
+                     <div className="text-[10px] text-hapf-muted uppercase">Output Tokens</div>
+                     <div className="text-sm font-bold text-hapf-accent font-mono">{runMetrics.completionTokens.toLocaleString()}</div>
+                 </div>
+                 <div className="bg-black/30 p-2 rounded border border-hapf-border">
+                     <div className="text-[10px] text-hapf-muted uppercase">Total</div>
+                     <div className="text-sm font-bold text-white font-mono">{runMetrics.totalTokens.toLocaleString()}</div>
+                 </div>
+            </div>
+
+            {/* Chart */}
+            <div className="flex-1 min-h-[250px] bg-hapf-panel/50 border border-hapf-border rounded-lg p-4">
+                <div className="text-xs font-bold text-hapf-muted mb-4 uppercase">Simulated Complexity by Module (Output Density)</div>
                 <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={data}>
-                        <XAxis dataKey="name" stroke="#52525b" fontSize={12} tickLine={false} axisLine={false}/>
-                        <YAxis stroke="#52525b" fontSize={12} tickLine={false} axisLine={false}/>
+                    <BarChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: -20 }}>
+                        <XAxis 
+                            dataKey="name" 
+                            stroke="#52525b" 
+                            fontSize={10} 
+                            tickLine={false} 
+                            axisLine={false}
+                            interval={0}
+                            angle={-45}
+                            textAnchor="end"
+                            height={60}
+                        />
+                        <YAxis stroke="#52525b" fontSize={10} tickLine={false} axisLine={false}/>
                         <Tooltip 
-                            contentStyle={{ backgroundColor: '#18181b', borderColor: '#3f3f46', color: '#fff' }}
+                            contentStyle={{ backgroundColor: '#18181b', borderColor: '#3f3f46', color: '#fff', fontSize: '12px' }}
                             itemStyle={{ color: '#3b82f6' }}
                             cursor={{fill: '#27272a'}}
+                            formatter={(value: any) => [value, 'Chars Generated']}
                         />
-                        <Bar dataKey="latency" name="Latency (ms)" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="complexity" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20} />
                     </BarChart>
                 </ResponsiveContainer>
-            </div>
-            <div className="grid grid-cols-2 gap-4 mt-6">
-                <div className="bg-hapf-panel p-3 rounded border border-hapf-border">
-                    <div className="text-xs text-hapf-muted uppercase">Total Tokens</div>
-                    <div className="text-xl font-bold text-hapf-primary">~4,500</div>
-                </div>
-                <div className="bg-hapf-panel p-3 rounded border border-hapf-border">
-                    <div className="text-xs text-hapf-muted uppercase">Est. Cost</div>
-                    <div className="text-xl font-bold text-hapf-success">$0.0018</div>
-                </div>
             </div>
         </div>
      );
@@ -633,7 +715,7 @@ function App() {
                         onChange={(e) => handleExampleChange(e.target.value)}
                         className="bg-[#09090b] text-hapf-text border border-hapf-border rounded px-2 py-1 appearance-none pr-8 cursor-pointer focus:border-hapf-primary outline-none transition-colors hover:border-hapf-muted"
                       >
-                        {Object.entries(PIPELINE_EXAMPLES).map(([key, example]) => (
+                        {Object.entries(PIPELINE_EXAMPLES).map(([key, example]: [string, any]) => (
                           <option key={key} value={key}>{example.name}</option>
                         ))}
                       </select>

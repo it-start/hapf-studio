@@ -1,5 +1,6 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
-import { VirtualFile, ProjectArchitecture, GeneratedSpec, ProviderConfig, AIProvider, N8nWorkflowData } from "../types";
+import { VirtualFile, ProjectArchitecture, GeneratedSpec, ProviderConfig, AIProvider, N8nWorkflowData, SimulationResult } from "../types";
 
 // NOTE: process.env.API_KEY is assumed to be available as per instructions.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -98,17 +99,6 @@ export const runGenerateSpec = async (arch: ProjectArchitecture): Promise<Genera
   return JSON.parse(response.text || "{}");
 };
 
-export interface SimulationStep {
-  module: string;
-  message: string;
-  data_preview?: string;
-}
-
-export interface SimulationResult {
-  steps: SimulationStep[];
-  output: any;
-}
-
 /**
  * Generic Pipeline Simulator
  * Simulates execution of ANY HAPF code based on input.
@@ -170,7 +160,16 @@ export const runGenericPipelineSimulation = async (
     }
   });
 
-  return JSON.parse(response.text || '{"steps": [], "output": {}}');
+  const parsedJson = JSON.parse(response.text || '{"steps": [], "output": {}}');
+
+  return {
+    ...parsedJson,
+    usage: {
+      promptTokenCount: response.usageMetadata?.promptTokenCount || 0,
+      candidatesTokenCount: response.usageMetadata?.candidatesTokenCount || 0,
+      totalTokenCount: response.usageMetadata?.totalTokenCount || 0,
+    }
+  };
 };
 
 /**

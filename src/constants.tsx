@@ -5,7 +5,7 @@
 
 // Re-export from the new Examples Registry
 // This ensures App.tsx and other components don't break immediately
-export { PIPELINE_EXAMPLES, INITIAL_HAPF_CODE, DEFAULT_INPUT_TEXT } from './examples';
+export { PIPELINE_EXAMPLES, INITIAL_HAPF_CODE, DEFAULT_INPUT_TEXT } from './examples/index';
 
 // App configuration constants
 export const APP_VERSION = "1.0.0";
