@@ -153,11 +153,10 @@ export const runGenericPipelineSimulation = async (
       
       Rules:
       1. Trace the pipeline logic step-by-step.
-      2. Agentic Loops: If you encounter a 'loop' construct (e.g. 'loop (attempts < 5)'), you MUST simulate the iterations clearly. 
-         - **IMPORTANT**: For Agent workflows, include "[THOUGHT]" logs to show the internal monologue or reasoning of the agent.
-           Example: { "module": "agent.planner", "message": "[THOUGHT] The requirement is ambiguous. I need to assume X." }
-         - Show the loop variable changing (e.g. "Iteration 1/3") in the logs.
-         - Simulate failure/retry cycles for dev-agents (e.g. Test Fails -> Fix -> Test Passes).
+      2. Agentic Loops: If you encounter a 'loop' construct (e.g. 'loop (i < depth)'), you MUST simulate the iterations clearly based on the variable input.
+         - **IMPORTANT**: If 'depth' is 3, show 3 iterations. If 5, show 5. STRICTLY respect loop bounds.
+         - For Deep Research or Agent workflows, you MUST include "[THOUGHT]" logs to show the internal monologue.
+           Example: { "module": "research.planner", "message": "[THOUGHT] Iteration 2/3: Previous results were too broad. Narrowing focus to 'Edge Caching'." }
       3. Simulate realistic output for each module based on the input context.
       4. If there are conditional branches (if/else), evaluate them based on your simulated data.
       

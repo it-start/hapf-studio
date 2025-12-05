@@ -332,7 +332,7 @@ pipeline "reconstruct_repository" {
   "deep-research": {
     name: "Deep Research (RFC Agent)",
     code: `package "hapf-research-system" {
-  version: "0.9.0"
+  version: "1.0.0"
   doc: "Autonomous agent for researching and evolving the HAPF Runtime Specification."
 }
 
@@ -350,6 +350,7 @@ module "research.planner" {
     input: { topic: String, iteration: Int }
     output: { sub_questions: List<String> }
   }
+  runtime: { model: "gemini-2.5-pro-reasoning" }
   instructions: {
     system_template: "Generate targeted research questions for the HAPF Runtime based on current iteration."
   }
@@ -368,6 +369,7 @@ module "research.critic" {
     input: { insights: List<Insight> }
     output: { refined_insights: List<Insight>, gaps: List<String> }
   }
+  runtime: { model: "gemini-2.5-pro-reasoning" }
   instructions: {
     system_template: "Critique findings. Identify contradictions or missing data in the runtime spec."
   }
@@ -378,15 +380,19 @@ module "research.synthesizer" {
     input: { all_insights: List<Insight> }
     output: String # Markdown Report
   }
+  runtime: { model: "gemini-2.5-flash" }
 }
 
 pipeline "iterative_rfc_research" {
   let depth = input.depth # 3, 5, or 7
   let topic = input.topic
   let knowledge_base = []
+  
+  let i = 0
 
   # Research Loop
   loop (i < depth) {
+    i = i + 1
     
     # 1. Plan
     let questions = run research.planner({ 
