@@ -128,13 +128,18 @@ export const runGenericPipelineSimulation = async (hapfCode: string, inputData: 
       Execute the provided HAPF pipeline code using the Input Data.
       Since you do not have access to real external tools (OCR, Kafka, Shell), YOU MUST SIMULATE the execution.
       
+      Rules:
       1. Trace the pipeline logic step-by-step.
-      2. Simulate realistic output for each module based on the input context.
-      3. If there are conditional branches (if/else), evaluate them based on your simulated data.
+      2. If you encounter a 'loop' construct (e.g. 'loop (i < depth)'), you MUST simulate the iterations clearly. 
+         - Respect the input variables (e.g. 'depth') to determine iteration count.
+         - Show the loop variable changing (e.g. "Iteration 1/3") in the logs.
+         - For 'Deep Research' tasks, simulate the accumulation of knowledge.
+      3. Simulate realistic output for each module based on the input context.
+      4. If there are conditional branches (if/else), evaluate them based on your simulated data.
       
       Return a JSON object with:
       - steps: An array of execution steps representing the timeline. Each step must have:
-          - module: The EXACT name of the module being executed (e.g. "scan.git_walker"). If it's a system action (like "return" or "io.write"), use "SYSTEM".
+          - module: The EXACT name of the module being executed (e.g. "scan.git_walker"). If it's a system action (like "return" or "io.write" or "loop"), use "SYSTEM".
           - message: A log message describing what happened.
           - data_preview: (Optional) A short string representation of the data flowing out of this step (e.g. "5 files found", "Score: 0.8").
       - output: The final result object of the pipeline.`,

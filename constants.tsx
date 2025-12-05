@@ -123,6 +123,97 @@ pipeline "reverse_engineer_repo" {
   ]
 }`
   },
+  "deep-research": {
+    name: "Deep Research (RFC Agent)",
+    code: `package "hapf-research-system" {
+  version: "0.9.0"
+  doc: "Autonomous agent for researching and evolving the HAPF Runtime Specification."
+}
+
+# --- Configuration ---
+# depth: 3 (Standard), 5 (Deep), 7 (Exhaustive)
+
+type Insight struct {
+  source: String
+  finding: String
+  confidence: Float
+}
+
+module "research.planner" {
+  contract: {
+    input: { topic: String, iteration: Int }
+    output: { sub_questions: List<String> }
+  }
+  instructions: {
+    system_template: "Generate targeted research questions for the HAPF Runtime based on current iteration."
+  }
+}
+
+module "research.web_oracle" {
+  contract: {
+    input: { queries: List<String> }
+    output: List<Insight>
+  }
+  runtime: { tool: "google_search" }
+}
+
+module "research.critic" {
+  contract: {
+    input: { insights: List<Insight> }
+    output: { refined_insights: List<Insight>, gaps: List<String> }
+  }
+  instructions: {
+    system_template: "Critique findings. Identify contradictions or missing data in the runtime spec."
+  }
+}
+
+module "research.synthesizer" {
+  contract: {
+    input: { all_insights: List<Insight> }
+    output: String # Markdown Report
+  }
+}
+
+pipeline "iterative_rfc_research" {
+  let depth = input.depth # 3, 5, or 7
+  let topic = input.topic
+  let knowledge_base = []
+
+  # Research Loop
+  loop (i < depth) {
+    
+    # 1. Plan
+    let questions = run research.planner({ 
+      topic: topic, 
+      iteration: i 
+    })
+
+    # 2. Execute
+    let raw_data = run research.web_oracle(questions.sub_questions)
+
+    # 3. Critique
+    let result = run research.critic(raw_data)
+
+    knowledge_base.push(result.refined_insights)
+    
+    # Adaptive Refinement
+    if (result.gaps.length > 0) {
+       topic = "Investigate gaps: " + result.gaps.join(", ")
+    }
+  }
+
+  # Final Report
+  let rfc_draft = run research.synthesizer({
+    all_insights: knowledge_base
+  })
+  
+  io.write_output("HAPF_Runtime_RFC_Draft.md", rfc_draft)
+}`,
+    input: `{
+  "topic": "Optimizing HAPF Runtime for Distributed Edge Computing",
+  "depth": 3
+}`
+  },
   "biblionexus": {
     name: "BiblioNexus (Complex Arch)",
     code: `package "biblionexus-spec" {
