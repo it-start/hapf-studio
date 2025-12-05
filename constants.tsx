@@ -123,6 +123,80 @@ pipeline "reverse_engineer_repo" {
   ]
 }`
   },
+  "doc-teleport": {
+    name: "Doc Teleport (BRD ↔ HAPF)",
+    code: `package "doc-teleport" {
+  version: "1.0.0"
+  doc: "Bidirectional transport between Business Orbitals (BRD/PRD) and Technical Orbitals (HAPF/TDD)."
+}
+
+# --- Types ---
+type Requirement struct {
+  id: String
+  priority: Enum["P0", "P1", "P2"]
+  description: String
+  acceptance_criteria: List<String>
+}
+
+# --- Modules ---
+
+module "orbitals.brd_parser" {
+  contract: { input: String, output: List<Requirement> }
+  instructions: { 
+    system_template: "Extract structured requirements from unstructured Business Requirement Document (BRD) text." 
+  }
+}
+
+module "orbitals.hapf_architect" {
+  contract: { input: List<Requirement>, output: String } # Returns HAPF Source Code
+  runtime: { model: "gemini-2.5-pro-reasoning" }
+  instructions: { 
+    system_template: """
+      Act as a System Architect.
+      Generate a full HAPF v1.0 specification that implements the provided requirements.
+      Define necessary types, modules, and pipelines.
+    """ 
+  }
+}
+
+module "orbitals.tdd_generator" {
+  contract: { input: String, output: String } # Input HAPF, Output Markdown TDD
+  instructions: { 
+    system_template: """
+      Write a Technical Design Document (TDD) based on the provided HAPF specification.
+      Include sections for: Data Schema, API Contracts, and Execution Flow.
+      Format as Markdown.
+    """ 
+  }
+}
+
+# --- Pipelines ---
+
+pipeline "brd_to_hapf_spec" {
+  doc: "Transport: Business Orbital -> Code Orbital"
+  
+  # 1. Parse BRD
+  let reqs = run orbitals.brd_parser(input.document_text)
+  
+  # 2. Architect Solution
+  let spec = run orbitals.hapf_architect(reqs)
+  
+  io.write_output("generated_architecture.hapf", spec)
+}
+
+pipeline "hapf_to_tdd_doc" {
+  doc: "Transport: Code Orbital -> Technical Orbital"
+  
+  # 1. Generate Docs
+  let tdd = run orbitals.tdd_generator(input.hapf_code)
+  
+  io.write_output("technical_design_doc.md", tdd)
+}`,
+    input: `{
+  "document_text": "## Business Requirement: Loyalty Points System\\n\\nWe need a system where users earn points for purchases.\\n- For every $1 spent, user gets 10 points.\\n- Points can be redeemed for discounts (100 points = $1).\\n- P0: Users must have a 'Tier' (Gold, Silver, Bronze) based on total spend.\\n- P1: System must send an email notification when a user upgrades a tier.\\n- P2: Admin dashboard to view top spenders.",
+  "hapf_code": null
+}`
+  },
   "n8n-integration": {
     name: "n8n Integration (Webhook)",
     code: `package "n8n-automation" {
@@ -548,6 +622,10 @@ module "quantum.vacuum_fluctuation" {
     input: { seed: String, complexity: Float }
     output: QuantumField
   }
+  runtime: {
+    model: "mistral-large" # High creativity
+    temperature: 0.9
+  }
   instructions: {
     system_template: """
       Generate a STABLE quantum field from vacuum fluctuations.
@@ -561,6 +639,9 @@ module "ether.harmonizer" {
   contract: {
     input: QuantumField
     output: QuantumField
+  }
+  runtime: {
+    model: "cohere-command-r-plus" # High reasoning
   }
   instructions: {
     system_template: "Harmonize the field. Align spins to create visual patterns. Increase energy levels."

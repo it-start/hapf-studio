@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Artifacts } from '../types';
-import { FileText, Box, Image as ImageIcon, ChevronRight, ChevronDown, Table, Sparkles, Cpu, Package, HardDrive, FileCode, Download, Workflow, Share2 } from 'lucide-react';
+import { FileText, Box, Image as ImageIcon, ChevronRight, ChevronDown, Table, Sparkles, Cpu, Package, HardDrive, FileCode, Download, Workflow, Share2, Triangle, Circle, Square, Star } from 'lucide-react';
 import CodeBlock from './CodeBlock';
 import { motion } from 'framer-motion';
 
@@ -67,6 +67,19 @@ const QuantumArtRenderer = ({ data }: { data: any }) => {
     // Safety check: Needs x/y or similar
     if (!particles[0].hasOwnProperty('x')) return null;
 
+    const renderParticleShape = (spin: string, size: number, color: string) => {
+        const style = { width: size, height: size, fill: color };
+        const spinUpper = spin ? spin.toUpperCase() : 'UP';
+        
+        switch(spinUpper) {
+            case 'UP': return <Triangle size={size} fill={color} className="text-transparent" />;
+            case 'DOWN': return <Triangle size={size} fill={color} className="text-transparent rotate-180" />;
+            case 'STRANGE': return <Square size={size} fill={color} className="text-transparent animate-spin-slow" />;
+            case 'CHARM': return <Star size={size} fill={color} className="text-transparent animate-pulse" />;
+            default: return <Circle size={size} fill={color} className="text-transparent" />;
+        }
+    };
+
     return (
         <div className="mt-4 mb-6 relative">
              <div className="flex items-center justify-between mb-2">
@@ -94,56 +107,62 @@ const QuantumArtRenderer = ({ data }: { data: any }) => {
                          <motion.div
                             key={i}
                             initial={{ 
-                                x: `${p.x}%`, 
-                                y: `${p.y}%`, 
+                                left: `${p.x}%`, 
+                                top: `${p.y}%`, 
                                 scale: 0,
                                 opacity: 0 
                             }}
                             animate={{ 
-                                x: [`${p.x}%`, `${p.x + (Math.random() * 10 - 5)}%`, `${p.x}%`],
-                                y: [`${p.y}%`, `${p.y + (Math.random() * 10 - 5)}%`, `${p.y}%`],
+                                left: [`${p.x}%`, `${p.x + (Math.random() * 10 - 5)}%`, `${p.x}%`],
+                                top: [`${p.y}%`, `${p.y + (Math.random() * 10 - 5)}%`, `${p.y}%`],
                                 scale: [1, 1.2, 1],
-                                opacity: [p.energy || 0.7, 1, p.energy || 0.7]
+                                opacity: [p.energy || 0.7, 1, p.energy || 0.7],
+                                rotate: p.spin === 'STRANGE' ? [0, 90, 180, 270, 360] : 0
                             }}
                             transition={{ 
                                 duration: Math.random() * 3 + 2, 
                                 repeat: Infinity,
                                 ease: "easeInOut" 
                             }}
-                            className="absolute rounded-full blur-[1px]"
+                            className="absolute flex items-center justify-center"
                             style={{
-                                width: size,
-                                height: size,
-                                backgroundColor: color,
-                                boxShadow: `0 0 ${size * 2}px ${color}`
+                                width: size * 1.5,
+                                height: size * 1.5,
+                                filter: `drop-shadow(0 0 ${size/2}px ${color})`
                             }}
-                         />
+                         >
+                             {renderParticleShape(p.spin, size, color)}
+                         </motion.div>
                      );
                  })}
                  
                  {/* Connecting Lines (Simulated Ether) */}
                  <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-30">
-                    {particles.slice(0, 10).map((p1: any, i: number) => 
-                        particles.slice(i + 1, i + 3).map((p2: any, j: number) => (
-                            <motion.line
-                                key={`${i}-${j}`}
-                                x1={`${p1.x}%`}
-                                y1={`${p1.y}%`}
-                                x2={`${p2.x}%`}
-                                y2={`${p2.y}%`}
-                                stroke={p1.color || '#8b5cf6'}
-                                strokeWidth="1"
-                                initial={{ pathLength: 0, opacity: 0 }}
-                                animate={{ pathLength: 1, opacity: 0.5 }}
-                                transition={{ duration: 2, delay: 1 }}
-                            />
-                        ))
-                    )}
+                    {particles.map((p1: any, i: number) => (
+                        <React.Fragment key={i}>
+                            {particles.slice(i + 1, Math.min(i + 3, particles.length)).map((p2: any, j: number) => (
+                                <motion.line
+                                    key={`line-${i}-${j}`}
+                                    x1={`${p1.x}%`}
+                                    y1={`${p1.y}%`}
+                                    x2={`${p2.x}%`}
+                                    y2={`${p2.y}%`}
+                                    stroke={p1.color || '#8b5cf6'}
+                                    strokeWidth="1"
+                                    initial={{ pathLength: 0, opacity: 0 }}
+                                    animate={{ pathLength: 1, opacity: 0.5 }}
+                                    transition={{ duration: 2, delay: 1 }}
+                                />
+                            ))}
+                        </React.Fragment>
+                    ))}
                  </svg>
              </div>
              
-             <div className="mt-2 text-[10px] text-hapf-muted text-center font-mono">
-                 Rendered via HAPF Ether Engine v0.1
+             <div className="mt-2 flex items-center justify-center gap-4 text-[10px] text-hapf-muted font-mono">
+                 <span className="flex items-center gap-1"><Triangle size={8} className="fill-current"/> UP/DOWN</span>
+                 <span className="flex items-center gap-1"><Square size={8} className="fill-current"/> STRANGE</span>
+                 <span className="flex items-center gap-1"><Star size={8} className="fill-current"/> CHARM</span>
              </div>
         </div>
     );
@@ -323,7 +342,21 @@ const SmartValueRenderer = ({ name, value }: { name: string, value: any }) => {
         );
     }
     
-    // 2. Markdown/Long Text Check (Heuristic: contains newlines or specific keywords)
+    // 2. HAPF Source Code Check (Heuristic)
+    if (typeof value === 'string' && (value.includes('package "') || value.includes('pipeline "'))) {
+        return (
+            <div className="mt-2 mb-4 w-full">
+               <div className="text-xs text-hapf-muted mb-2 flex items-center gap-2 uppercase tracking-wider font-bold">
+                   <FileCode size={12}/> Generated HAPF Source
+               </div>
+               <div className="bg-[#09090b] border border-hapf-border rounded-lg max-h-[400px] overflow-auto shadow-inner">
+                   <CodeBlock code={value} />
+               </div>
+            </div>
+        );
+    }
+
+    // 3. Markdown/Long Text Check (Heuristic: contains newlines or specific keywords)
     if (typeof value === 'string' && (value.includes('\n') || value.length > 150)) {
          return (
              <div className="mt-2 mb-4 w-full">
@@ -337,7 +370,7 @@ const SmartValueRenderer = ({ name, value }: { name: string, value: any }) => {
          );
     }
 
-    // 3. Fallback to JSON Tree for objects or simple key-value
+    // 4. Fallback to JSON Tree for objects or simple key-value
     return <JsonNode name={name} value={value} />;
 };
 
