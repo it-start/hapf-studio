@@ -123,6 +123,119 @@ pipeline "reverse_engineer_repo" {
   ]
 }`
   },
+  "dev-agent": {
+    name: "Autonomous Dev Agent (AI)",
+    code: `package "autonomous-developer" {
+  version: "2.1.0"
+  doc: "An autonomous agent that implements features from Jira tickets, runs tests, and iterates."
+}
+
+type Ticket struct {
+  id: String
+  title: String
+  requirements: List<String>
+}
+
+type CodeResult struct {
+  files: Map<String, String>
+  test_status: Enum["PASS", "FAIL"]
+  logs: String
+}
+
+# --- Modules ---
+
+module "kanban.fetch_ticket" {
+  contract: {
+    input: String
+    output: Ticket
+  }
+  runtime: { tool: "jira_api" }
+}
+
+module "agent.architect" {
+  contract: {
+    input: Ticket
+    output: String # Implementation Plan
+  }
+  instructions: {
+    system_template: "You are a Principal Engineer. Create a step-by-step implementation plan for the requirements."
+  }
+}
+
+module "agent.coder" {
+  contract: {
+    input: { plan: String, feedback: String? }
+    output: Map<String, String> # File content
+  }
+  runtime: { model: "gemini-2.5-pro-coder" }
+  instructions: {
+    system_template: "You are a Senior Developer. Write Clean Code. If feedback is present, fix the errors."
+  }
+}
+
+module "env.sandbox_test" {
+  contract: {
+    input: Map<String, String>
+    output: CodeResult
+  }
+  runtime: { tool: "docker_sandbox" }
+  instructions: {
+    system_template: "Mount files. Run 'npm test'. Return logs and status."
+  }
+}
+
+module "git.create_pr" {
+  contract: {
+    input: { ticket: String, files: Map<String, String> }
+    output: String # PR URL
+  }
+}
+
+# --- Agentic Pipeline ---
+pipeline "feature_implementation_loop" {
+  let ticket_id = input.ticket_id
+  let ticket = run kanban.fetch_ticket(ticket_id)
+  
+  # 1. Plan
+  let plan = run agent.architect(ticket)
+  
+  let feedback = null
+  let attempts = 0
+  
+  # 2. Code-Test-Fix Loop
+  loop (attempts < 5) {
+    attempts = attempts + 1
+    
+    # Write Code
+    let source_files = run agent.coder({
+      plan: plan,
+      feedback: feedback
+    })
+    
+    # Run Tests
+    let result = run env.sandbox_test(source_files)
+    
+    if (result.test_status == "PASS") {
+      # Success!
+      let pr_url = run git.create_pr({
+        ticket: ticket.id,
+        files: source_files
+      })
+      io.write_output("pull_request", pr_url)
+      return
+    }
+    
+    # Failure -> Loop back with logs
+    feedback = "Tests Failed: " + result.logs
+  }
+  
+  io.write_output("failure_report", "Unable to implement feature after 5 attempts.")
+}`,
+    input: `{
+  "ticket_id": "PROJ-1024",
+  "context": "Implement a distributed rate-limiter middleware for Express.js using Redis Lua scripts."
+}`
+  },
   "project-teleport": {
     name: "Project Teleport (Git <-> HAPF)",
     code: `package "project-teleport" {

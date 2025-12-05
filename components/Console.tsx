@@ -1,12 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import { LogEntry, LogLevel } from '../types';
-import { Terminal, CheckCircle2, AlertCircle, Info, Hash } from 'lucide-react';
+import { Terminal, CheckCircle2, AlertCircle, Info, Hash, BrainCircuit } from 'lucide-react';
 
 interface ConsoleProps {
   logs: LogEntry[];
 }
 
-const LogIcon = ({ level }: { level: LogLevel }) => {
+const LogIcon = ({ level, isThought }: { level: LogLevel, isThought: boolean }) => {
+  if (isThought) return <BrainCircuit className="w-3 h-3 text-hapf-muted/70 mt-0.5" />;
+  
   switch (level) {
     case LogLevel.SUCCESS: return <CheckCircle2 className="w-3 h-3 text-hapf-success mt-0.5" />;
     case LogLevel.ERROR: return <AlertCircle className="w-3 h-3 text-hapf-error mt-0.5" />;
@@ -33,26 +35,32 @@ const Console: React.FC<ConsoleProps> = ({ logs }) => {
         {logs.length === 0 && (
           <div className="text-hapf-muted italic opacity-50">Waiting for execution...</div>
         )}
-        {logs.map((log) => (
-          <div key={log.id} className="flex gap-3 group hover:bg-white/5 p-1 rounded transition-colors">
-            <span className="text-hapf-muted opacity-50 select-none w-16 shrink-0">{log.timestamp}</span>
-            <div className="shrink-0 pt-0.5">
-               <LogIcon level={log.level} />
+        {logs.map((log) => {
+          const isThought = log.message.includes('[THOUGHT]');
+          const displayMessage = log.message.replace('[THOUGHT]', '').trim();
+          
+          return (
+            <div key={log.id} className={`flex gap-3 group hover:bg-white/5 p-1 rounded transition-colors ${isThought ? 'opacity-70' : ''}`}>
+              <span className="text-hapf-muted opacity-50 select-none w-16 shrink-0">{log.timestamp}</span>
+              <div className="shrink-0 pt-0.5">
+                 <LogIcon level={log.level} isThought={isThought} />
+              </div>
+              {log.module && (
+                 <span className={`shrink-0 font-bold px-1.5 py-0.5 rounded text-[10px] h-fit ${isThought ? 'bg-white/5 text-hapf-muted' : 'bg-hapf-accent/10 text-hapf-accent'}`}>
+                   {log.module}
+                 </span>
+              )}
+              <span className={`break-all ${
+                isThought ? 'text-hapf-muted italic' :
+                log.level === LogLevel.ERROR ? 'text-hapf-error' : 
+                log.level === LogLevel.SUCCESS ? 'text-hapf-success' : 
+                'text-hapf-text'
+              }`}>
+                {displayMessage}
+              </span>
             </div>
-            {log.module && (
-               <span className="text-hapf-accent shrink-0 font-bold px-1.5 py-0.5 bg-hapf-accent/10 rounded text-[10px] h-fit">
-                 {log.module}
-               </span>
-            )}
-            <span className={`break-all ${
-              log.level === LogLevel.ERROR ? 'text-hapf-error' : 
-              log.level === LogLevel.SUCCESS ? 'text-hapf-success' : 
-              'text-hapf-text'
-            }`}>
-              {log.message}
-            </span>
-          </div>
-        ))}
+          );
+        })}
         <div ref={bottomRef} />
       </div>
     </div>
