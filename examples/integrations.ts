@@ -1,5 +1,4 @@
 
-
 import { defineSpec } from './utils';
 
 // ============================================================================
@@ -281,6 +280,10 @@ module "cloud.aggregator" {
     locality: "cloud-region-us-east"
     security: {
       protocol: "mtls"
+      enforce: true
+      cert_path: "/etc/certs/edge-client.pem"
+      key_path: "/etc/certs/edge-client.key"
+      ca_path: "/etc/certs/root-ca.pem"
       cert_rotation: "24h"
     }
   }
