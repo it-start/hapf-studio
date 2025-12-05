@@ -1,9 +1,25 @@
-import React from 'react';
+// ============================================================================
+// HAPF STUDIO CONSTANTS
+// Principles: KISS, DRY, Single Source of Truth
+// ============================================================================
 
-export const PIPELINE_EXAMPLES: Record<string, { name: string; code: string; input: string }> = {
-  "reverse-engineer": {
-    name: "Legacy Lifter (Repo → HAPF)",
-    code: `package "legacy-lifter" {
+/**
+ * Helper to enforce structure and handle JSON formatting automatically.
+ * @param name The display name of the pipeline.
+ * @param code The raw HAPF source code.
+ * @param input The raw JavaScript object to be stringified as JSON input.
+ */
+const defineSpec = (name: string, code: string, input: object) => ({
+  name,
+  code: code.trim(),
+  input: JSON.stringify(input, null, 2)
+});
+
+// ============================================================================
+// 1. LEGACY LIFTER (Reverse Engineering)
+// ============================================================================
+const CODE_LEGACY_LIFTER = `
+package "legacy-lifter" {
   version: "1.0.0"
   standard: "HAPF-Core-v1.0"
   doc: "Reverse-engineers codebases into declarative HAPF specs."
@@ -114,18 +130,22 @@ pipeline "reverse_engineer_repo" {
   let hapf_code = run codegen.hapf_writer(blueprint)
   
   io.write_file("reconstructed_spec.hapf", hapf_code)
-}`,
-    input: `{
-  "repo_path": "./legacy-payment-system",
-  "files": [
-    { "path": "src/payment.py", "content": "def process(req): ..." },
-    { "path": "src/utils.py", "content": "def log(msg): ..." }
+}
+`;
+
+const INPUT_LEGACY_LIFTER = {
+  repo_path: "./legacy-payment-system",
+  files: [
+    { path: "src/payment.py", content: "def process(req): ..." },
+    { path: "src/utils.py", content: "def log(msg): ..." }
   ]
-}`
-  },
-  "doc-teleport": {
-    name: "Doc Teleport (BRD ↔ HAPF)",
-    code: `package "doc-teleport" {
+};
+
+// ============================================================================
+// 2. DOC TELEPORT (Bidirectional Specs)
+// ============================================================================
+const CODE_DOC_TELEPORT = `
+package "doc-teleport" {
   version: "1.0.0"
   doc: "Bidirectional transport between Business Orbitals (BRD/PRD) and Technical Orbitals (HAPF/TDD)."
 }
@@ -191,15 +211,19 @@ pipeline "hapf_to_tdd_doc" {
   let tdd = run orbitals.tdd_generator(input.hapf_code)
   
   io.write_output("technical_design_doc.md", tdd)
-}`,
-    input: `{
-  "document_text": "## Business Requirement: Loyalty Points System\\n\\nWe need a system where users earn points for purchases.\\n- For every $1 spent, user gets 10 points.\\n- Points can be redeemed for discounts (100 points = $1).\\n- P0: Users must have a 'Tier' (Gold, Silver, Bronze) based on total spend.\\n- P1: System must send an email notification when a user upgrades a tier.\\n- P2: Admin dashboard to view top spenders.",
-  "hapf_code": null
-}`
-  },
-  "n8n-integration": {
-    name: "n8n Integration (Webhook)",
-    code: `package "n8n-automation" {
+}
+`;
+
+const INPUT_DOC_TELEPORT = {
+  document_text: "## Business Requirement: Loyalty Points System\n\nWe need a system where users earn points for purchases.\n- For every $1 spent, user gets 10 points.\n- Points can be redeemed for discounts (100 points = $1).\n- P0: Users must have a 'Tier' (Gold, Silver, Bronze) based on total spend.\n- P1: System must send an email notification when a user upgrades a tier.\n- P2: Admin dashboard to view top spenders.",
+  hapf_code: null
+};
+
+// ============================================================================
+// 3. N8N INTEGRATION (Workflows)
+// ============================================================================
+const CODE_N8N = `
+package "n8n-automation" {
   version: "1.0.0"
   doc: "A HAPF workflow designed to be compiled into an n8n JSON workflow."
 }
@@ -281,18 +305,22 @@ pipeline "customer_feedback_handler" {
       text: "ℹ️ New feedback: " + payload.message
     })
   }
-}`,
-    input: `{
-  "webhook_json": {
-    "user_email": "alice@example.com",
-    "message": "I am extremely frustrated with the downtime!",
-    "timestamp": 1715431200
+}
+`;
+
+const INPUT_N8N = {
+  webhook_json: {
+    user_email: "alice@example.com",
+    message: "I am extremely frustrated with the downtime!",
+    timestamp: 1715431200
   }
-}`
-  },
-  "dev-agent": {
-    name: "Autonomous Dev Agent (AI)",
-    code: `package "autonomous-developer" {
+};
+
+// ============================================================================
+// 4. DEV AGENT (Autonomous)
+// ============================================================================
+const CODE_DEV_AGENT = `
+package "autonomous-developer" {
   version: "2.1.0"
   doc: "An autonomous agent that implements features from Jira tickets, runs tests, and iterates."
 }
@@ -397,15 +425,19 @@ pipeline "feature_implementation_loop" {
   }
   
   io.write_output("failure_report", "Unable to implement feature after 5 attempts.")
-}`,
-    input: `{
-  "ticket_id": "PROJ-1024",
-  "context": "Implement a distributed rate-limiter middleware for Express.js using Redis Lua scripts."
-}`
-  },
-  "project-teleport": {
-    name: "Project Teleport (Git <-> HAPF)",
-    code: `package "project-teleport" {
+}
+`;
+
+const INPUT_DEV_AGENT = {
+  ticket_id: "PROJ-1024",
+  context: "Implement a distributed rate-limiter middleware for Express.js using Redis Lua scripts."
+};
+
+// ============================================================================
+// 5. PROJECT TELEPORT (IO)
+// ============================================================================
+const CODE_PROJECT_TELEPORT = `
+package "project-teleport" {
   version: "2.0.0"
   doc: "Compiles source code into HAPF Bundles and reconstructs them."
 }
@@ -489,16 +521,20 @@ pipeline "reconstruct_repository" {
     # Write to local disk (simulated)
     io.write_fs(restored_files)
   }
-}`,
-    input: `{
-  "mode": "pack",
-  "repo_url": "https://github.com/hapf-lang/core-runtime",
-  "bundle_data": null
-}`
-  },
-  "deep-research": {
-    name: "Deep Research (RFC Agent)",
-    code: `package "hapf-research-system" {
+}
+`;
+
+const INPUT_PROJECT_TELEPORT = {
+  mode: "pack",
+  repo_url: "https://github.com/hapf-lang/core-runtime",
+  bundle_data: null
+};
+
+// ============================================================================
+// 6. DEEP RESEARCH (Recursion)
+// ============================================================================
+const CODE_DEEP_RESEARCH = `
+package "hapf-research-system" {
   version: "1.0.0"
   doc: "Autonomous agent for researching and evolving the HAPF Runtime Specification."
 }
@@ -587,15 +623,19 @@ pipeline "iterative_rfc_research" {
   })
   
   io.write_output("HAPF_Runtime_RFC_Draft.md", rfc_draft)
-}`,
-    input: `{
-  "topic": "Optimizing HAPF Runtime for Distributed Edge Computing",
-  "depth": 3
-}`
-  },
-  "quantum-synthesis": {
-    name: "Quantum Ether Synthesis",
-    code: `package "ether-arts" {
+}
+`;
+
+const INPUT_DEEP_RESEARCH = {
+  topic: "Optimizing HAPF Runtime for Distributed Edge Computing",
+  depth: 3
+};
+
+// ============================================================================
+// 7. QUANTUM SYNTHESIS (Generative Art)
+// ============================================================================
+const CODE_QUANTUM_SYNTHESIS = `
+package "ether-arts" {
   version: "0.1.0-alpha"
   doc: "Generative pipeline for Quantum/Etheric artifacts."
 }
@@ -661,15 +701,19 @@ pipeline "synthesize_ether_art" {
   let art_piece = run ether.harmonizer(raw_field)
   
   io.write_output("quantum_masterpiece", art_piece)
-}`,
-    input: `{
-  "seed": "Nebula-X-77",
-  "complexity": 0.85
-}`
-  },
-  "biblionexus": {
-    name: "BiblioNexus (Complex Arch)",
-    code: `package "biblionexus-spec" {
+}
+`;
+
+const INPUT_QUANTUM_SYNTHESIS = {
+  seed: "Nebula-X-77",
+  complexity: 0.85
+};
+
+// ============================================================================
+// 8. BIBLIONEXUS (Architecture)
+// ============================================================================
+const CODE_BIBLIONEXUS = `
+package "biblionexus-spec" {
   version: "1.0.0"
   standard: "HAPF-Core-v1.0"
   doc: "Reconstructed HAPF specification for BiblioNexus project."
@@ -937,25 +981,29 @@ pipeline "Theological_Debate_Simulation" {
   doc: "Orchestrates a multi-agent AI debate or user discussion on a theological topic."
   let discussionTopic = input.topic
   run ai.TheCouncilComponent(discussionTopic: discussionTopic)
-}`,
-    input: `{
-  "analysis_data": { 
-    "dataset": "Psalms", 
-    "metrics": ["sentiment", "density", "etymology"] 
+}
+`;
+
+const INPUT_BIBLIONEXUS = {
+  analysis_data: { 
+    dataset: "Psalms", 
+    metrics: ["sentiment", "density", "etymology"] 
   },
-  "user_query": "Explain the concept of Logos in John 1.",
-  "image_prompt": "Moses parting the Red Sea, cinematic lighting, realistic style",
-  "review_submission": { 
-    "author": "User123", 
-    "content_id": "Analysis-99",
-    "comments": "Excellent visualization of the data."
+  user_query: "Explain the concept of Logos in John 1.",
+  image_prompt: "Moses parting the Red Sea, cinematic lighting, realistic style",
+  review_submission: { 
+    author: "User123", 
+    content_id: "Analysis-99",
+    comments: "Excellent visualization of the data."
   },
-  "topic": "Free Will vs Predestination in Pauline Epistles"
-}`
-  },
-  "self-heal": {
-    name: "Auto-Heal & Refactor",
-    code: `package "code-evolution-engine" {
+  topic: "Free Will vs Predestination in Pauline Epistles"
+};
+
+// ============================================================================
+// 9. SELF HEAL (Code Repair)
+// ============================================================================
+const CODE_SELF_HEAL = `
+package "code-evolution-engine" {
   version: "1.0.0"
   doc: "System that monitors a repository, fixes bugs automatically, and improves code quality."
 }
@@ -1033,16 +1081,20 @@ pipeline "auto_heal_loop" {
     original_code: input.content,
     patch: patch
   })
-}`,
-    input: `{
-  "file": "math_lib.py",
-  "content": "def calc(a, b): return a / b",
-  "logs": "ZeroDivisionError: division by zero"
-}`
-  },
-  "sentiment-analysis": {
-    name: "Customer Sentiment",
-    code: `package "customer-insights" {
+}
+`;
+
+const INPUT_SELF_HEAL = {
+  file: "math_lib.py",
+  content: "def calc(a, b): return a / b",
+  logs: "ZeroDivisionError: division by zero"
+};
+
+// ============================================================================
+// 10. SENTIMENT ANALYSIS (Stream)
+// ============================================================================
+const CODE_SENTIMENT = `
+package "customer-insights" {
   version: "1.2.0"
   doc: "Real-time sentiment analysis pipeline for support tickets."
 }
@@ -1103,16 +1155,20 @@ pipeline "process_tickets" {
   }
   
   run crm.update(results)
-}`,
-    input: `{
-  "source": "kafka://support-tickets-prod",
-  "consumer_group": "ai-processor-v1",
-  "batch_size": 100
-}`
-  },
-  "legal-audit": {
-    name: "Legal Contract Audit",
-    code: `package "legal-compliance" {
+}
+`;
+
+const INPUT_SENTIMENT = {
+  source: "kafka://support-tickets-prod",
+  consumer_group: "ai-processor-v1",
+  batch_size: 100
+};
+
+// ============================================================================
+// 11. LEGAL AUDIT (Compliance)
+// ============================================================================
+const CODE_LEGAL_AUDIT = `
+package "legal-compliance" {
   version: "2.1.0"
   doc: "Automated review of vendor contracts for high-risk clauses."
 }
@@ -1154,12 +1210,30 @@ pipeline "vendor_contract_review" {
   } else {
     run approval.auto_sign(input.document)
   }
-}`,
-    input: `{
-  "document_url": "s3://legal-vault/contracts/2025/vendor_xyz_nda.pdf",
-  "policy_version": "2025-Q1"
-}`
-  }
+}
+`;
+
+const INPUT_LEGAL_AUDIT = {
+  document_url: "s3://legal-vault/contracts/2025/vendor_xyz_nda.pdf",
+  policy_version: "2025-Q1"
+};
+
+// ============================================================================
+// EXPORT: SINGLE SOURCE OF TRUTH
+// ============================================================================
+
+export const PIPELINE_EXAMPLES: Record<string, { name: string; code: string; input: string }> = {
+  "reverse-engineer":   defineSpec("Legacy Lifter (Repo → HAPF)", CODE_LEGACY_LIFTER, INPUT_LEGACY_LIFTER),
+  "doc-teleport":       defineSpec("Doc Teleport (BRD ↔ HAPF)", CODE_DOC_TELEPORT, INPUT_DOC_TELEPORT),
+  "n8n-integration":    defineSpec("n8n Integration (Webhook)", CODE_N8N, INPUT_N8N),
+  "dev-agent":          defineSpec("Autonomous Dev Agent (AI)", CODE_DEV_AGENT, INPUT_DEV_AGENT),
+  "project-teleport":   defineSpec("Project Teleport (Git <-> HAPF)", CODE_PROJECT_TELEPORT, INPUT_PROJECT_TELEPORT),
+  "deep-research":      defineSpec("Deep Research (RFC Agent)", CODE_DEEP_RESEARCH, INPUT_DEEP_RESEARCH),
+  "quantum-synthesis":  defineSpec("Quantum Ether Synthesis", CODE_QUANTUM_SYNTHESIS, INPUT_QUANTUM_SYNTHESIS),
+  "biblionexus":        defineSpec("BiblioNexus (Complex Arch)", CODE_BIBLIONEXUS, INPUT_BIBLIONEXUS),
+  "self-heal":          defineSpec("Auto-Heal & Refactor", CODE_SELF_HEAL, INPUT_SELF_HEAL),
+  "sentiment-analysis": defineSpec("Customer Sentiment", CODE_SENTIMENT, INPUT_SENTIMENT),
+  "legal-audit":        defineSpec("Legal Contract Audit", CODE_LEGAL_AUDIT, INPUT_LEGAL_AUDIT),
 };
 
 export const INITIAL_HAPF_CODE = PIPELINE_EXAMPLES["reverse-engineer"].code;

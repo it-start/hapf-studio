@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useRef } from 'react';
 import { 
   Play, 
@@ -30,7 +31,7 @@ import {
   AIProvider,
   N8nConfig
 } from './types';
-import { PIPELINE_EXAMPLES } from './constants';
+import { PIPELINE_EXAMPLES } from './examples';
 import * as geminiService from './services/geminiService';
 import * as githubService from './services/githubService';
 import Console from './components/Console';
