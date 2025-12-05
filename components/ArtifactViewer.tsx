@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Artifacts } from '../types';
-import { FileText, Box, Image as ImageIcon, ChevronRight, ChevronDown, Table, Sparkles, Cpu, Package, HardDrive, FileCode } from 'lucide-react';
+import { FileText, Box, Image as ImageIcon, ChevronRight, ChevronDown, Table, Sparkles, Cpu, Package, HardDrive, FileCode, Download } from 'lucide-react';
 import CodeBlock from './CodeBlock';
 import { motion } from 'framer-motion';
 
@@ -154,6 +154,20 @@ const BundleExplorer = ({ data }: { data: any }) => {
     // Check if this is a HapfBundle
     if (!data || !data.manifest || !data.source_origin) return null;
 
+    const handleDownload = () => {
+        const filename = `bundle-${data.id || 'snapshot'}.hapf`;
+        const jsonStr = JSON.stringify(data, null, 2);
+        const blob = new Blob([jsonStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
     return (
         <div className="mt-4 mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -204,7 +218,11 @@ const BundleExplorer = ({ data }: { data: any }) => {
                      </table>
                  </div>
                  <div className="bg-hapf-primary/10 border-t border-hapf-primary/20 p-2 text-center">
-                     <button className="text-xs font-bold text-hapf-primary hover:text-white transition-colors">
+                     <button 
+                        onClick={handleDownload}
+                        className="text-xs font-bold text-hapf-primary hover:text-white transition-colors flex items-center justify-center gap-2 w-full py-1"
+                     >
+                         <Download size={12} />
                          DOWNLOAD BUNDLE (.hapf)
                      </button>
                  </div>

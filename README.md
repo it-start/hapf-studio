@@ -1,20 +1,42 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# HAPF v1.0 Studio
 
-# Run and deploy your AI Studio app
+## Overview
 
-This contains everything you need to run your app locally.
+The **Human–AI Program Format (HAPF)** Studio is a specialized Integrated Development Environment (IDE) designed to bridge the gap between human architectural intent and AI-driven execution.
 
-View your app in AI Studio: https://ai.studio/apps/drive/1Iapd_mHBh8e9zHnUmiM_KcH7rWVfL2zm
+This environment serves as the reference implementation for:
+1.  **HAPF Language v1.0**: A declarative syntax for defining AI-agentic workflows and system architectures.
+2.  **HAPF Runtime Simulator**: A Gemini-powered engine that simulates the execution of HAPF pipelines.
+3.  **Project Teleport**: A protocol for serializing entire software repositories into portable, semantic HAPF Bundles.
 
-## Run Locally
+## Core Features
 
-**Prerequisites:**  Node.js
+-   **Reverse Engineering (Legacy Lifter)**: Connect to a GitHub repository to extract its semantic intent and generate a HAPF specification automatically.
+-   **Pipeline Simulation**: Run complex agentic loops (e.g., "Self-Healing Code", "Deep Research", "Legal Audit") in a safe, simulated sandbox.
+-   **Visualizers**:
+    -   **Live Diagram**: React Flow-based real-time visualization of pipeline execution.
+    -   **Artifact Viewer**: Rich rendering of outputs including Markdown, JSON trees, Images, and Generative Quantum Art.
+-   **Project Teleport**: "Compile" a source code repository into a single `.hapf` file for transport, analysis, or backup, and "Decompile" it back to source.
 
+## Getting Started
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### Prerequisites
+-   Node.js v18+
+-   Google Gemini API Key (set as `API_KEY` in environment)
+
+### Installation
+```bash
+npm install
+npm start
+```
+
+## Documentation
+
+For deep dives into the protocol and runtime requirements, please refer to the `docs/` directory:
+
+-   [HAPF Language Specification](docs/HAPF_SPEC_v1.0.md)
+-   [Runtime Implementation Guide](docs/RUNTIME_INTERFACE.md)
+-   [Project Teleport Protocol](docs/PROJECT_TELEPORT.md)
+
+---
+*Built with React, TypeScript, Vite, Tailwind, and Gemini 2.5 Flash.*
