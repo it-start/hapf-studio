@@ -123,6 +123,99 @@ pipeline "reverse_engineer_repo" {
   ]
 }`
   },
+  "project-teleport": {
+    name: "Project Teleport (Git <-> HAPF)",
+    code: `package "project-teleport" {
+  version: "2.0.0"
+  doc: "Compiles source code into HAPF Bundles and reconstructs them."
+}
+
+# --- Data Structures ---
+type FileEntry struct {
+  path: String
+  permissions: String # "0644"
+  encoding: Enum["utf-8", "base64"]
+  content: Blob
+  hash: String # SHA-256
+}
+
+type HapfBundle struct {
+  id: UUID
+  timestamp: Date
+  source_origin: String
+  total_files: Int
+  manifest: List<FileEntry>
+  compression_ratio: Float
+}
+
+# --- Modules ---
+
+module "git.cloner" {
+  contract: {
+    input: { url: String, branch: String? }
+    output: List<FileEntry>
+  }
+  runtime: { tool: "git_cli" }
+}
+
+module "archiver.compressor" {
+  contract: {
+    input: List<FileEntry>
+    output: HapfBundle
+  }
+  instructions: {
+    system_template: """
+      Pack files into a HAPF Bundle.
+      1. Minify code where safe.
+      2. Deduplicate text blocks.
+      3. Generate integrity hashes.
+    """
+  }
+}
+
+module "archiver.reconstructor" {
+  contract: {
+    input: HapfBundle
+    output: List<FileEntry>
+  }
+  instructions: {
+    system_template: """
+      Hydrate source code from Bundle.
+      Restores original directory structure and file permissions.
+    """
+  }
+}
+
+# --- Pipeline 1: Compile to Bundle (Pack) ---
+pipeline "pack_repository" {
+  if (input.mode == "pack") {
+    let files = run git.cloner({ 
+      url: input.repo_url 
+    })
+    
+    let bundle = run archiver.compressor(files)
+    
+    io.write_output("project_snapshot.hapf_bundle", bundle)
+  }
+}
+
+# --- Pipeline 2: Decompile to Source (Unpack) ---
+pipeline "reconstruct_repository" {
+  if (input.mode == "unpack") {
+    let bundle = input.bundle_data
+    
+    let restored_files = run archiver.reconstructor(bundle)
+    
+    # Write to local disk (simulated)
+    io.write_fs(restored_files)
+  }
+}`,
+    input: `{
+  "mode": "pack",
+  "repo_url": "https://github.com/hapf-lang/core-runtime",
+  "bundle_data": null
+}`
+  },
   "deep-research": {
     name: "Deep Research (RFC Agent)",
     code: `package "hapf-research-system" {
@@ -212,6 +305,73 @@ pipeline "iterative_rfc_research" {
     input: `{
   "topic": "Optimizing HAPF Runtime for Distributed Edge Computing",
   "depth": 3
+}`
+  },
+  "quantum-synthesis": {
+    name: "Quantum Ether Synthesis",
+    code: `package "ether-arts" {
+  version: "0.1.0-alpha"
+  doc: "Generative pipeline for Quantum/Etheric artifacts."
+}
+
+type QuantumField struct {
+  id: UUID
+  coherence: Float
+  entropy: Float
+  particles: List<Particle>
+}
+
+type Particle struct {
+  id: String
+  x: Float   # 0-100
+  y: Float   # 0-100
+  size: Float
+  energy: Float # 0.0 - 1.0 (Opacity/Glow)
+  spin: Enum["UP", "DOWN", "STRANGE", "CHARM"]
+  color: String # Hex
+}
+
+module "quantum.vacuum_fluctuation" {
+  contract: {
+    input: { seed: String, complexity: Float }
+    output: QuantumField
+  }
+  instructions: {
+    system_template: """
+      Generate a STABLE quantum field from vacuum fluctuations.
+      Create 15-30 particles with diverse positions (0-100), colors (neon palettes), and spins.
+      Ensure high coherence (>0.8).
+    """
+  }
+}
+
+module "ether.harmonizer" {
+  contract: {
+    input: QuantumField
+    output: QuantumField
+  }
+  instructions: {
+    system_template: "Harmonize the field. Align spins to create visual patterns. Increase energy levels."
+  }
+}
+
+pipeline "synthesize_ether_art" {
+  let seed = input.seed
+  
+  # 1. Generate Raw Field
+  let raw_field = run quantum.vacuum_fluctuation({ 
+    seed: seed, 
+    complexity: 0.9 
+  })
+  
+  # 2. Harmonize & Stabilize
+  let art_piece = run ether.harmonizer(raw_field)
+  
+  io.write_output("quantum_masterpiece", art_piece)
+}`,
+    input: `{
+  "seed": "Nebula-X-77",
+  "complexity": 0.85
 }`
   },
   "biblionexus": {

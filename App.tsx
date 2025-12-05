@@ -3,9 +3,7 @@ import {
   Play, 
   RotateCcw, 
   Code2, 
-  FileText, 
   Activity,
-  Layers,
   Box,
   FileJson,
   ChevronDown,
@@ -14,7 +12,6 @@ import {
   X,
   Lock,
   Globe,
-  Cpu
 } from 'lucide-react';
 import { 
   LogLevel, 
@@ -28,8 +25,8 @@ import * as geminiService from './services/geminiService';
 import * as githubService from './services/githubService';
 import Console from './components/Console';
 import HapfDiagram from './components/HapfDiagram';
-import CodeBlock from './components/CodeBlock';
 import HapfEditor from './components/HapfEditor';
+import ArtifactViewer from './components/ArtifactViewer';
 import { BarChart, XAxis, YAxis, Tooltip, ResponsiveContainer, Bar } from 'recharts';
 
 // Helper for generating IDs
@@ -176,63 +173,6 @@ function App() {
   const isRunDisabled = pipelineStatus !== PipelineStatus.IDLE && pipelineStatus !== PipelineStatus.COMPLETE && pipelineStatus !== PipelineStatus.FAILED;
 
   // --- Render Helpers ---
-
-  const renderArtifacts = () => {
-    if (!artifacts.files && !artifacts.architecture && !artifacts.genericOutput) {
-      return <div className="flex items-center justify-center h-full text-hapf-muted">No artifacts generated yet. Run the pipeline.</div>;
-    }
-    return (
-      <div className="space-y-6 p-4 font-mono text-sm">
-        
-        {artifacts.spec && (
-          <div className="bg-hapf-panel border border-hapf-success/30 rounded p-4 flex flex-col gap-3">
-             <h3 className="text-hapf-success font-bold flex items-center gap-2"><FileText size={16}/> Generated HAPF Spec</h3>
-             <p className="text-hapf-muted text-xs">{artifacts.spec.description}</p>
-             <div className="bg-black p-3 rounded border border-hapf-border max-h-64 overflow-auto">
-                 <CodeBlock code={artifacts.spec.hapf_code} />
-             </div>
-          </div>
-        )}
-
-        {artifacts.files && (
-          <div className="bg-hapf-panel border border-hapf-accent/30 rounded p-4">
-             <h3 className="text-hapf-accent font-bold mb-2 flex items-center gap-2"><Box size={16}/> Ingested Files (Live)</h3>
-             <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
-                    <thead>
-                        <tr className="text-hapf-muted border-b border-hapf-border">
-                            <th className="py-2">Path</th>
-                            <th className="py-2">Intent</th>
-                            <th className="py-2">Content Hint</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {artifacts.files.map((file, idx) => (
-                            <tr key={idx} className="border-b border-hapf-border/50 hover:bg-white/5">
-                                <td className="py-2 text-hapf-text font-bold">{file.path}</td>
-                                <td className="py-2 text-hapf-accent">{file.intent}</td>
-                                <td className="py-2 text-hapf-muted truncate max-w-[150px]">{file.content_hint}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-             </div>
-          </div>
-        )}
-
-        {artifacts.genericOutput && (
-            <div className="bg-hapf-panel border border-hapf-primary/30 rounded p-4 flex flex-col gap-3">
-                <h3 className="text-hapf-primary font-bold flex items-center gap-2"><Box size={16}/> Pipeline Output</h3>
-                <div className="bg-black p-3 rounded border border-hapf-border overflow-auto max-h-[500px]">
-                    <pre className="text-hapf-text font-mono text-xs whitespace-pre-wrap">
-                        {JSON.stringify(artifacts.genericOutput, null, 2)}
-                    </pre>
-                </div>
-            </div>
-        )}
-      </div>
-    );
-  };
 
   const renderMetrics = () => {
      const data = [
@@ -517,7 +457,7 @@ function App() {
                  )}
                  {activeTab === 'artifacts' && (
                      <div className="h-full overflow-y-auto">
-                        {renderArtifacts()}
+                        <ArtifactViewer artifacts={artifacts} />
                      </div>
                  )}
                  {activeTab === 'metrics' && (
