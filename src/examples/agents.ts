@@ -1,19 +1,22 @@
 
+
 import { defineSpec } from './utils';
 
 // ============================================================================
 // DEV AGENT (Autonomous)
 // ============================================================================
 const CODE_DEV_AGENT = `
-package "autonomous-developer" {
-  version: "2.1.0"
-  doc: "An autonomous agent that implements features from Jira tickets, runs tests, and iterates."
+package "autonomous-developer-github" {
+  version: "2.2.0"
+  doc: "An autonomous agent that manages GitHub Issues (CRUD) and implements features."
 }
 
-type Ticket struct {
-  id: String
+type GitHubIssue struct {
+  number: Int
   title: String
-  requirements: List<String>
+  body: String
+  state: Enum["open", "closed"]
+  labels: List<String>
 }
 
 type CodeResult struct {
@@ -22,23 +25,52 @@ type CodeResult struct {
   logs: String
 }
 
-# --- Modules ---
+# --- GitHub CRUD Modules ---
 
-module "kanban.fetch_ticket" {
+module "github.issues.create" {
   contract: {
-    input: String
-    output: Ticket
+    input: { title: String, body: String, labels: List<String> }
+    output: GitHubIssue
   }
-  runtime: { tool: "jira_api" }
+  runtime: { tool: "github_api", scope: "repo" }
+  instructions: { system_template: "Create a new issue in the repository." }
 }
+
+module "github.issues.get" {
+  contract: {
+    input: Int # Issue Number
+    output: GitHubIssue
+  }
+  runtime: { tool: "github_api", scope: "repo" }
+}
+
+module "github.issues.update" {
+  contract: {
+    input: { number: Int, body: String?, state: String?, labels: List<String>? }
+    output: GitHubIssue
+  }
+  runtime: { tool: "github_api", scope: "repo" }
+  instructions: { system_template: "Update issue details or add comments." }
+}
+
+module "github.issues.delete" {
+  contract: {
+    input: Int # Issue Number
+    output: Bool
+  }
+  doc: "Soft delete by closing and locking the issue."
+  runtime: { tool: "github_api", scope: "admin" }
+}
+
+# --- AI Worker Modules ---
 
 module "agent.architect" {
   contract: {
-    input: Ticket
+    input: GitHubIssue
     output: String # Implementation Plan
   }
   instructions: {
-    system_template: "You are a Principal Engineer. Create a step-by-step implementation plan for the requirements."
+    system_template: "You are a Principal Engineer. Read the issue body. Create a step-by-step implementation plan."
   }
 }
 
@@ -66,15 +98,17 @@ module "env.sandbox_test" {
 
 module "git.create_pr" {
   contract: {
-    input: { ticket: String, files: Map<String, String> }
+    input: { issue_number: Int, files: Map<String, String> }
     output: String # PR URL
   }
 }
 
 # --- Agentic Pipeline ---
 pipeline "feature_implementation_loop" {
-  let ticket_id = input.ticket_id
-  let ticket = run kanban.fetch_ticket(ticket_id)
+  let issue_number = input.issue_number
+  
+  # READ: Fetch the ticket
+  let ticket = run github.issues.get(issue_number)
   
   # 1. Plan
   let plan = run agent.architect(ticket)
@@ -98,9 +132,16 @@ pipeline "feature_implementation_loop" {
     if (result.test_status == "PASS") {
       # Success!
       let pr_url = run git.create_pr({
-        ticket: ticket.id,
+        issue_number: ticket.number,
         files: source_files
       })
+      
+      # UPDATE: Comment on the issue with PR link
+      run github.issues.update({
+        number: ticket.number,
+        body: "✅ Feature implemented. PR created: " + pr_url
+      })
+      
       io.write_output("pull_request", pr_url)
       return
     }
@@ -109,13 +150,17 @@ pipeline "feature_implementation_loop" {
     feedback = "Tests Failed: " + result.logs
   }
   
-  io.write_output("failure_report", "Unable to implement feature after 5 attempts.")
+  # UPDATE: Report failure on ticket
+  run github.issues.update({
+    number: ticket.number,
+    body: "❌ Failed to implement after 5 attempts. See logs."
+  })
 }
 `;
 
 const INPUT_DEV_AGENT = {
-  ticket_id: "PROJ-1024",
-  context: "Implement a distributed rate-limiter middleware for Express.js using Redis Lua scripts."
+  issue_number: 42,
+  context: "Repository: hapf-lang/core"
 };
 
 // ============================================================================
