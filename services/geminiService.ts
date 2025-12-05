@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { VirtualFile, ProjectArchitecture, GeneratedSpec } from "../types";
+import { VirtualFile, ProjectArchitecture, GeneratedSpec, ProviderConfig, AIProvider } from "../types";
 
 // NOTE: process.env.API_KEY is assumed to be available as per instructions.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -113,7 +113,28 @@ export interface SimulationResult {
  * Generic Pipeline Simulator
  * Simulates execution of ANY HAPF code based on input.
  */
-export const runGenericPipelineSimulation = async (hapfCode: string, inputData: string): Promise<SimulationResult> => {
+export const runGenericPipelineSimulation = async (
+  hapfCode: string, 
+  inputData: string,
+  providers?: Record<AIProvider, ProviderConfig>
+): Promise<SimulationResult> => {
+  
+  // Construct a description of available "Real" providers
+  let providerContext = "Running in DEFAULT SIMULATION mode (Gemini Only).";
+  if (providers) {
+      const active = Object.values(providers).filter(p => p.enabled);
+      if (active.length > 0) {
+          const prodProviders = active.filter(p => p.apiKey && p.apiKey.length > 0).map(p => p.provider);
+          if (prodProviders.length > 0) {
+             providerContext = `Running in PRODUCTION MODE. The user has provided API keys for: [${prodProviders.join(', ')}]. 
+             You must Simulate the EXACT latency, verbosity, and stylistic characteristics of these providers when the HAPF code requests them in 'runtime'.
+             For example, if 'mistral-large' is requested, generate logs that look like Mistral's verbose output.`;
+          } else {
+             providerContext = `Running in SIMULATION MODE. The user has enabled: [${active.map(p => p.provider).join(', ')}] but provided NO keys. Mimic them genericallly.`;
+          }
+      }
+  }
+
   const response = await ai.models.generateContent({
     model: modelId,
     contents: `
@@ -125,6 +146,8 @@ export const runGenericPipelineSimulation = async (hapfCode: string, inputData: 
     `,
     config: {
       systemInstruction: `You are the HAPF v1.0 Runtime Simulator. 
+      ${providerContext}
+      
       Execute the provided HAPF pipeline code using the Input Data.
       Since you do not have access to real external tools (OCR, Kafka, Shell), YOU MUST SIMULATE the execution.
       

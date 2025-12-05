@@ -12,6 +12,7 @@ export interface LogEntry {
   level: LogLevel;
   message: string;
   module?: string;
+  provider?: AIProvider; // Track which AI generated this log
 }
 
 export enum PipelineStatus {
@@ -21,6 +22,13 @@ export enum PipelineStatus {
   GENERATING = 'GENERATING',
   COMPLETE = 'COMPLETE',
   FAILED = 'FAILED'
+}
+
+export enum AIProvider {
+  GOOGLE = 'GOOGLE',
+  MISTRAL = 'MISTRAL',
+  COHERE = 'COHERE',
+  UNKNOWN = 'UNKNOWN'
 }
 
 // --- Self-Reflection HAPF Data Structures ---
@@ -53,4 +61,11 @@ export interface Artifacts {
 export interface GithubConfig {
   repoUrl: string;
   token?: string; // Optional PAT
+}
+
+export interface ProviderConfig {
+  provider: AIProvider;
+  enabled: boolean;
+  apiKey?: string;
+  defaultModel: string;
 }

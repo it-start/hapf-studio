@@ -11,7 +11,8 @@ import ReactFlow, {
   Position
 } from 'reactflow';
 import dagre from 'dagre';
-import { Box, FileInput, Settings, Cpu } from 'lucide-react';
+import { Box, FileInput, Settings, Cpu, Wind, Cloud, Hexagon } from 'lucide-react';
+import { AIProvider } from '../types';
 
 interface HapfDiagramProps {
   code: string;
@@ -59,6 +60,13 @@ const activeNodeStyle = {
   boxShadow: '0 0 15px rgba(16, 185, 129, 0.4)',
   transform: 'scale(1.05)',
   zIndex: 9999
+};
+
+const getProviderIcon = (text: string) => {
+    const t = text.toLowerCase();
+    if (t.includes('mistral')) return <Wind size={10} className="text-orange-400" />;
+    if (t.includes('cohere') || t.includes('command')) return <Hexagon size={10} className="text-teal-400" />;
+    return <Cloud size={10} className="text-blue-400" />;
 };
 
 const HapfDiagram: React.FC<HapfDiagramProps> = ({ code, activeModule }) => {
@@ -169,12 +177,19 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code, activeModule }) => {
 
         const blockContent = code.substring(blockStart + 1, blockEnd);
 
+        // Check for model provider config in runtime block to determine badge
+        let providerIcon = null;
+        if (blockContent.includes('mistral')) providerIcon = <Wind size={12} className="text-orange-400 absolute top-2 right-2" />;
+        else if (blockContent.includes('cohere') || blockContent.includes('command')) providerIcon = <Hexagon size={12} className="text-teal-400 absolute top-2 right-2" />;
+        else if (blockContent.includes('gemini') || blockContent.includes('google')) providerIcon = <Cloud size={12} className="text-blue-400 absolute top-2 right-2" />;
+
         // Create Module Node
         newNodes.push({
             id: moduleId,
             position: { x: 0, y: 0 },
             data: { label: (
-                <div className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1 relative">
+                    {providerIcon}
                     <div className="flex items-center gap-2 text-hapf-primary font-bold border-b border-hapf-border pb-1 mb-1">
                         <Box size={12} />
                         MODULE
@@ -188,7 +203,6 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code, activeModule }) => {
         nodeMap.set(moduleName, moduleId);
 
         // Check for Runtime Block inside Module
-        // Robust check for whitespace/newline/tabs around 'runtime'
         const runtimeRegex = /runtime\s*:/g;
         const rtMatch = runtimeRegex.exec(blockContent);
         
@@ -201,10 +215,9 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code, activeModule }) => {
                 if (rtBlockEnd !== -1) {
                     const rtContent = blockContent.substring(rtBlockStart + 1, rtBlockEnd);
                     
-                    // Parse simple key-values, handling comments
+                    // Parse simple key-values
                     const lines = rtContent.split('\n')
                         .map(l => {
-                            // Strip comments starting with #
                             const commentIdx = l.indexOf('#');
                             return commentIdx !== -1 ? l.substring(0, commentIdx).trim() : l.trim();
                         })
@@ -212,16 +225,25 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code, activeModule }) => {
                         .map(l => l.replace(/["{},]/g, ''));
                     
                     const rtConfig = lines.slice(0, 3).map((l, i) => (
-                        <div key={i} className="truncate opacity-80">{l}</div>
+                        <div key={i} className="truncate opacity-80 flex items-center gap-1">
+                             {l.includes('model') && getProviderIcon(l)}
+                             {l}
+                        </div>
                     ));
 
                     const rtId = `rt-${moduleName}`;
+                    
+                    // Determine style based on provider
+                    let customRuntimeStyle = { ...runtimeNodeStyle };
+                    if (rtContent.includes('mistral')) customRuntimeStyle.borderColor = '#f97316'; // Orange
+                    if (rtContent.includes('cohere')) customRuntimeStyle.borderColor = '#14b8a6'; // Teal
+
                     newNodes.push({
                         id: rtId,
                         position: { x: 0, y: 0 },
                         data: { label: (
                             <div className="flex flex-col gap-1">
-                                <div className="flex items-center gap-2 text-hapf-warning font-bold border-b border-hapf-warning/20 pb-1 mb-1">
+                                <div className="flex items-center gap-2 font-bold border-b border-white/10 pb-1 mb-1" style={{color: customRuntimeStyle.borderColor}}>
                                     <Settings size={12} />
                                     RUNTIME
                                 </div>
@@ -230,8 +252,8 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code, activeModule }) => {
                                 </div>
                             </div>
                         )},
-                        style: runtimeNodeStyle,
-                        type: 'runtime' // custom marker for dagre sizing
+                        style: customRuntimeStyle,
+                        type: 'runtime' 
                     });
 
                     // Edge: Module -> Runtime (Dashed)
@@ -240,8 +262,8 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code, activeModule }) => {
                         source: moduleId,
                         target: rtId,
                         animated: false,
-                        style: { stroke: '#f59e0b', strokeDasharray: '4 4' },
-                        markerEnd: { type: MarkerType.ArrowClosed, color: '#f59e0b' },
+                        style: { stroke: customRuntimeStyle.borderColor, strokeDasharray: '4 4' },
+                        markerEnd: { type: MarkerType.ArrowClosed, color: customRuntimeStyle.borderColor },
                     });
                 }
             }
@@ -250,7 +272,7 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code, activeModule }) => {
         cursor = blockEnd + 1;
     }
 
-    // 2. Scan for Pipelines
+    // 2. Scan for Pipelines (same logic as before)
     cursor = 0;
     while (cursor < code.length) {
         const pipelineIdx = code.indexOf('pipeline', cursor);
@@ -282,7 +304,7 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code, activeModule }) => {
 
                 const startIndex = runMatch.index + runMatch[0].length;
                 const remainder = pipelineContent.substring(startIndex);
-                const argsSection = remainder.split(')')[0]; // Simple approx
+                const argsSection = remainder.split(')')[0]; 
 
                 // Input Args
                 const inputUsageRegex = /input\.(\w+)/g;
@@ -320,7 +342,6 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code, activeModule }) => {
                 // Variable Args
                 const potentialVars = Array.from(variableMap.keys());
                 potentialVars.forEach(v => {
-                    // Check if variable is used as full word in args
                     const vRegex = new RegExp(`\\b${v}\\b`);
                     if (vRegex.test(argsSection)) {
                         const sourceModId = variableMap.get(v);
@@ -413,7 +434,6 @@ const HapfDiagram: React.FC<HapfDiagramProps> = ({ code, activeModule }) => {
     setNodes((nds) => 
       nds.map((node) => {
         // Check if this node is the active module
-        // We construct ID as `mod-{activeModule}`
         const isActive = activeModule && node.id === `mod-${activeModule}`;
         
         return {
