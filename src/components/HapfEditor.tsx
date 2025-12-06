@@ -1,6 +1,7 @@
 
 import React, { useEffect, useCallback } from 'react';
 import Editor, { useMonaco } from '@monaco-editor/react';
+import { analyzeCode } from '../services/typeChecker';
 
 interface HapfEditorProps {
   value: string;
@@ -90,7 +91,6 @@ const HapfEditor: React.FC<HapfEditorProps> = ({ value, onChange, failedModuleNa
           const textBeforeCursor = lineContent.substring(0, position.column - 1);
 
           // A. Argument Completion: run moduleName(|) or run moduleName({ | })
-          // Find if we are inside a module call
           // Regex lookbehind is limited, so we parse basic structure
           const runMatch = /run\s+([\w\.]+)\s*\(/.exec(textBeforeCursor);
           const insideRunParams = !!runMatch;
@@ -209,7 +209,7 @@ const HapfEditor: React.FC<HapfEditorProps> = ({ value, onChange, failedModuleNa
 
   }, [monaco]);
 
-  // Validation Logic (Simulated Parser) + Runtime Error Highlighting
+  // Validation Logic + Static Analysis + Runtime Error Highlighting
   useEffect(() => {
     if (!monaco || !value) return;
 
@@ -278,6 +278,19 @@ const HapfEditor: React.FC<HapfEditorProps> = ({ value, onChange, failedModuleNa
                 severity: 8 // Error
             });
         }
+
+        // 4. Static Semantic Analysis (Type Checking)
+        const semanticDiagnostics = analyzeCode(value);
+        semanticDiagnostics.forEach(d => {
+            markers.push({
+                startLineNumber: d.startLineNumber,
+                startColumn: d.startColumn,
+                endLineNumber: d.endLineNumber,
+                endColumn: d.endColumn,
+                message: d.message,
+                severity: d.severity
+            });
+        });
 
         const model = monaco.editor.getModels()[0];
         if (model) {
