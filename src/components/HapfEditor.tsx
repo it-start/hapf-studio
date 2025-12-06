@@ -1,18 +1,20 @@
+
 import React, { useEffect, useCallback } from 'react';
 import Editor, { useMonaco } from '@monaco-editor/react';
 
 interface HapfEditorProps {
   value: string;
   onChange: (value: string) => void;
+  failedModuleName?: string | null;
 }
 
-const HapfEditor: React.FC<HapfEditorProps> = ({ value, onChange }) => {
+const HapfEditor: React.FC<HapfEditorProps> = ({ value, onChange, failedModuleName }) => {
   const monaco = useMonaco();
 
   const handleEditorDidMount = useCallback(() => {
     if (!monaco) return;
 
-    // 1. Register Language
+    // 1. Register Language if not exists
     if (!monaco.languages.getLanguages().some(l => l.id === 'hapf')) {
       monaco.languages.register({ id: 'hapf' });
 
@@ -68,9 +70,11 @@ const HapfEditor: React.FC<HapfEditorProps> = ({ value, onChange }) => {
         ]
       });
 
-      // 4. Auto-Completion Provider
+      // 4. Auto-Completion Provider (DYNAMIC)
       monaco.languages.registerCompletionItemProvider('hapf', {
+        triggerCharacters: ['(', '{', ' ', '.', '"'],
         provideCompletionItems: (model, position) => {
+          const fullText = model.getValue();
           const word = model.getWordUntilPosition(position);
           const range = {
             startLineNumber: position.lineNumber,
@@ -79,40 +83,98 @@ const HapfEditor: React.FC<HapfEditorProps> = ({ value, onChange }) => {
             endColumn: word.endColumn
           };
 
-          const suggestions = [
-            {
-              label: 'module',
-              kind: monaco.languages.CompletionItemKind.Snippet,
-              insertText: 'module "${1:name}" {\n  contract: {\n    input: $2\n    output: $3\n  }\n  instructions: {\n    system_template: "$4"\n  }\n}',
-              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              documentation: 'Define a new execution module',
-              range: range
-            },
-            {
-              label: 'pipeline',
-              kind: monaco.languages.CompletionItemKind.Snippet,
-              insertText: 'pipeline "${1:name}" {\n  $0\n}',
-              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              documentation: 'Define a new pipeline workflow',
-              range: range
-            },
-            {
-              label: 'run',
-              kind: monaco.languages.CompletionItemKind.Snippet,
-              insertText: 'run ${1:module}(${2:args})',
-              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              documentation: 'Execute a module',
-              range: range
-            },
-            {
-              label: 'type',
-              kind: monaco.languages.CompletionItemKind.Snippet,
-              insertText: 'type ${1:Name} struct {\n  $2\n}',
-              insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-              documentation: 'Define a custom data structure',
-              range: range
-            }
-          ];
+          const suggestions: any[] = [];
+          
+          // Context Analysis
+          const lineContent = model.getLineContent(position.lineNumber);
+          const textBeforeCursor = lineContent.substring(0, position.column - 1);
+
+          // A. Argument Completion: run moduleName(|) or run moduleName({ | })
+          // Find if we are inside a module call
+          // Regex lookbehind is limited, so we parse basic structure
+          const runMatch = /run\s+([\w\.]+)\s*\(/.exec(textBeforeCursor);
+          const insideRunParams = !!runMatch;
+          
+          if (insideRunParams && runMatch) {
+             const calledModuleName = runMatch[1];
+             // Find definition of this module
+             const moduleDefRegex = new RegExp(`module\\s+"${calledModuleName}"\\s*\\{([\\s\\S]*?)\\}`, 'm');
+             const defMatch = moduleDefRegex.exec(fullText);
+             
+             if (defMatch) {
+                 const moduleBody = defMatch[1];
+                 // Find contract -> input
+                 const contractMatch = /contract\s*:\s*\{([\s\S]*?)\}/.exec(moduleBody);
+                 if (contractMatch) {
+                     const contractBody = contractMatch[1];
+                     // Find input block: input: { key: Type } OR input: Type
+                     const inputBlockMatch = /input\s*:\s*\{([^}]*)\}/.exec(contractBody);
+                     
+                     if (inputBlockMatch) {
+                        const inputContent = inputBlockMatch[1];
+                        // Extract keys: key: Type
+                        const keyRegex = /([a-zA-Z0-9_]+)\s*:/g;
+                        let keyMatch;
+                        while ((keyMatch = keyRegex.exec(inputContent)) !== null) {
+                            const argName = keyMatch[1];
+                            suggestions.push({
+                                label: argName,
+                                kind: monaco.languages.CompletionItemKind.Field,
+                                insertText: `${argName}: `,
+                                documentation: `Argument from ${calledModuleName} contract`,
+                                range: range
+                            });
+                        }
+                     }
+                 }
+             }
+          }
+
+          // B. Module Name Completion (after 'run ')
+          if (textBeforeCursor.trim().endsWith('run')) {
+             const moduleRegex = /module\s+"([^"]+)"/g;
+             let match;
+             while ((match = moduleRegex.exec(fullText)) !== null) {
+                 suggestions.push({
+                     label: match[1],
+                     kind: monaco.languages.CompletionItemKind.Function,
+                     insertText: `${match[1]}(`,
+                     documentation: 'Defined Module',
+                     range: range
+                 });
+             }
+          }
+
+          // C. Standard Snippets (only if not in specific context)
+          if (!insideRunParams) {
+              suggestions.push(
+                {
+                  label: 'module',
+                  kind: monaco.languages.CompletionItemKind.Snippet,
+                  insertText: 'module "${1:name}" {\n  contract: {\n    input: $2\n    output: $3\n  }\n  instructions: {\n    system_template: "$4"\n  }\n}',
+                  insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                  documentation: 'Define a new execution module',
+                  range
+                },
+                {
+                  label: 'pipeline',
+                  kind: monaco.languages.CompletionItemKind.Snippet,
+                  insertText: 'pipeline "${1:name}" {\n  $0\n}',
+                  insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                  documentation: 'Define a new pipeline workflow',
+                  range
+                },
+                {
+                  label: 'run',
+                  kind: monaco.languages.CompletionItemKind.Snippet,
+                  insertText: 'run ${1:module}(${2:args})',
+                  insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                  documentation: 'Execute a module',
+                  range
+                }
+              );
+          }
+
           return { suggestions };
         }
       });
@@ -147,7 +209,7 @@ const HapfEditor: React.FC<HapfEditorProps> = ({ value, onChange }) => {
 
   }, [monaco]);
 
-  // Validation Logic (Simulated Parser)
+  // Validation Logic (Simulated Parser) + Runtime Error Highlighting
   useEffect(() => {
     if (!monaco || !value) return;
 
@@ -159,15 +221,15 @@ const HapfEditor: React.FC<HapfEditorProps> = ({ value, onChange }) => {
 
         lines.forEach((line, i) => {
             const lineNum = i + 1;
+            const trimmed = line.trim();
             
-            // Brace Checking
+            // 1. Syntax: Brace Checking
             for (let char of line) {
                 if (char === '{') openBraces++;
                 if (char === '}') openBraces--;
             }
 
-            // Keyword usage checks
-            const trimmed = line.trim();
+            // 2. Syntax: Keyword usage checks
             if (trimmed.startsWith('module') && !trimmed.includes('"')) {
                  markers.push({
                     startLineNumber: lineNum,
@@ -187,6 +249,22 @@ const HapfEditor: React.FC<HapfEditorProps> = ({ value, onChange }) => {
                     message: "Pipeline definition requires a name in quotes: pipeline \"name\" {",
                     severity: 8 // Error
                  });
+            }
+
+            // 3. Runtime Error Highlighting
+            if (failedModuleName) {
+                // Heuristic: Find line calling the failed module
+                // Covers: "run module" or "run module("
+                if (line.includes(`run ${failedModuleName}`) || line.includes(`run ${failedModuleName.replace(/^mod-/, '')}`)) {
+                    markers.push({
+                        startLineNumber: lineNum,
+                        startColumn: 1,
+                        endLineNumber: lineNum,
+                        endColumn: line.length + 1,
+                        message: `RUNTIME ERROR: Module '${failedModuleName}' crashed during execution. Check logs for details.`,
+                        severity: 8 // Error
+                    });
+                }
             }
         });
 
@@ -211,7 +289,7 @@ const HapfEditor: React.FC<HapfEditorProps> = ({ value, onChange }) => {
     const timer = setTimeout(validate, 500);
     return () => clearTimeout(timer);
 
-  }, [value, monaco]);
+  }, [value, monaco, failedModuleName]);
 
   useEffect(() => {
     handleEditorDidMount();

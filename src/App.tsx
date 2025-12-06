@@ -15,7 +15,8 @@ import {
   GithubConfig,
   ProviderConfig,
   AIProvider,
-  N8nConfig
+  N8nConfig,
+  LogLevel
 } from './types';
 import { PIPELINE_EXAMPLES } from './examples';
 
@@ -67,6 +68,11 @@ function App() {
     resetRuntime,
     addLog
   } = useHapfRuntime();
+
+  // --- Derived State ---
+  const failedModule = status === PipelineStatus.FAILED 
+    ? logs.slice().reverse().find(l => l.level === LogLevel.ERROR && l.module && l.module !== "SYSTEM")?.module
+    : null;
 
   // --- Handlers ---
 
@@ -259,6 +265,7 @@ function App() {
                     <HapfEditor 
                         value={editorCode}
                         onChange={setEditorCode}
+                        failedModuleName={failedModule}
                     />
                 </div>
             </div>
