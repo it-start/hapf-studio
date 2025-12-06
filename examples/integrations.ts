@@ -307,9 +307,70 @@ const INPUT_EDGE_COMPUTE = {
   sample_rate_ms: 50
 };
 
+// ============================================================================
+// SEARCH GROUNDING (Market Intel)
+// ============================================================================
+const CODE_SEARCH_INTEL = `
+package "market-intel" {
+  version: "1.0.0"
+  doc: "Real-time market intelligence gathering using search grounding."
+}
+
+type SearchResult struct {
+  title: String
+  url: String
+  snippet: String
+}
+
+type IntelReport struct {
+  summary: String
+  key_trends: List<String>
+  sources: List<String>
+}
+
+module "web.search" {
+  contract: {
+    input: String
+    output: List<SearchResult>
+  }
+  runtime: {
+    tool: "google_search"
+    grounding: true
+  }
+}
+
+module "analyst.synthesize" {
+  contract: {
+    input: List<SearchResult>
+    output: IntelReport
+  }
+  runtime: { model: "gemini-2.5-pro-reasoning" }
+  instructions: {
+    system_template: "Synthesize search results into a concise market intelligence report. Extract key trends and cite sources."
+  }
+}
+
+pipeline "generate_market_report" {
+  let query = input.topic
+  
+  # 1. Gather Info
+  let results = run web.search(query)
+  
+  # 2. Analyze
+  let report = run analyst.synthesize(results)
+  
+  io.write_output("market_report.md", report)
+}
+`;
+
+const INPUT_SEARCH_INTEL = {
+  topic: "Latest trends in solid-state batteries for EVs 2025"
+};
+
 export const INTEGRATION_EXAMPLES = {
   "n8n-integration": defineSpec("n8n Integration (Webhook)", CODE_N8N, INPUT_N8N),
   "sentiment-analysis": defineSpec("Customer Sentiment", CODE_SENTIMENT, INPUT_SENTIMENT),
   "legal-audit": defineSpec("Legal Contract Audit", CODE_LEGAL_AUDIT, INPUT_LEGAL_AUDIT),
   "edge-compute": defineSpec("Distributed Edge Compute", CODE_EDGE_COMPUTE, INPUT_EDGE_COMPUTE),
+  "search-intel": defineSpec("Search Retrieval (Market Intel)", CODE_SEARCH_INTEL, INPUT_SEARCH_INTEL),
 };
